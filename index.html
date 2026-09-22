@@ -1,470 +1,478 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
+<meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cronograma de Coaching - VIDAS</title>
-  
-  <!-- Supabase -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- PDF.js para ler o conteúdo dos PDFs -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
-  <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');
-    body { font-family: 'Open Sans', sans-serif; background: #f4f6f4; color: #1a2e1a; }
-    .mono { font-family: 'DM Mono', monospace; }
-    
-    .btn { padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s; border: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
-    .btn-primary { background: #07583C; color: #fff; }
-    .btn-primary:hover { background: #0a6e4a; }
-    .btn-secondary { background: #fff; color: #1a2e1a; border: 1px solid #d0e4d0; }
-    .btn-secondary:hover { border-color: #07583C; color: #07583C; }
-    .btn-sm { padding: 4px 10px; font-size: 11px; }
-    
-    .status-badge { padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; }
-    .st-pendente { background: #fce8e6; color: #d93025; }
-    .st-agendado { background: #fef3e0; color: #c47d0e; }
-    .st-realizado { background: #e8f5ee; color: #07583C; }
+<title>Cronograma Coaching — VIDAS</title>
+<!-- Supabase -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- PDF.js para leitura dos PDFs do WeCheck -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;700&family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f4f6f4;--surface:#fff;--surface2:#f0f5f0;--border:#d0e4d0;
+  --green:#07583C;--green2:#B3DD64;--green-dim:#e0f0e8;
+  --yellow:#c47d0e;--yellow-dim:#fef3e0;
+  --red:#d93025;--red-dim:#fce8e6;
+  --blue:#1a73e8;--blue-dim:#e8f0fe;
+  --purple:#7c3aed;--purple-dim:#ede9fe;
+  --text:#1a2e1a;--muted:#5a7a5a;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'Open Sans',sans-serif;min-height:100vh;}
 
-    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 50; align-items: center; justify-content: center; }
-    .modal { background: #fff; border-radius: 12px; padding: 24px; width: 450px; max-width: 90vw; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
-    
-    input, select { width: 100%; padding: 8px 12px; border: 1px solid #d0e4d0; border-radius: 6px; font-size: 13px; outline: none; }
-    input:focus, select:focus { border-color: #07583C; }
-  </style>
+/* HEADER */
+header{background:#07583C;padding:11px 28px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(7,88,60,0.3);}
+.header-title {color: #fff; font-size: 18px; font-weight: 800;}
+.header-subtitle {color: #B3DD64; font-size: 12px; font-family: 'DM Mono', monospace;}
+.user-info{display:flex;align-items:center;gap:12px;font-size:13px;color:rgba(255,255,255,0.8);}
+.user-info strong{color:#fff;}
+
+/* MAIN */
+main{padding:22px 28px;max-width:1400px;margin:0 auto;}
+
+/* BOTOES E FORMS */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;font-family:'Open Sans',sans-serif;transition:all .2s;}
+.btn-primary{background:#07583C;color:#fff;}
+.btn-primary:hover{background:#0a6e4a;}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;}
+.btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border);}
+.btn-secondary:hover{border-color:var(--green);color:var(--green);}
+.btn-danger{background:var(--red-dim);color:var(--red);border:1px solid #f5c6c4;}
+.btn-sm{padding:4px 10px;font-size:11px;}
+
+.form-row{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;align-items:flex-end;}
+label{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.8px;display:block;margin-bottom:4px;}
+select, input{background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 11px;font-size:13px;font-family:'Open Sans',sans-serif;min-width:180px;}
+select:focus, input:focus{outline:none;border-color:#07583C;}
+
+/* TABELAS */
+.table-wrap{background:#fff;border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:18px;}
+.table-header{padding:13px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background: linear-gradient(90deg, #07583C, #0a7a54);}
+.table-title{font-size:14px;font-weight:700;color:#fff;}
+table{width:100%;border-collapse:collapse;}
+th{background:#e8f5ee;padding:10px 14px;text-align:left;font-size:11px;font-family:'DM Mono',monospace;color:#07583C;text-transform:uppercase;letter-spacing:1px;font-weight:600;}
+td{padding:12px 14px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:middle;}
+tr:hover td{background:var(--surface2);}
+
+.badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;font-family:'DM Mono',monospace;}
+.badge-green{background:var(--green-dim);color:#07583C;}
+.badge-yellow{background:var(--yellow-dim);color:var(--yellow);}
+.badge-blue{background:var(--blue-dim);color:var(--blue);}
+
+/* MODALS */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;}
+.modal-overlay.show{display:flex;}
+.modal{background:#fff;border-radius:12px;padding:28px;width:460px;max-width:95vw;box-shadow:0 8px 40px rgba(0,0,0,0.15);}
+.modal-title{font-size:16px;font-weight:800;color:#07583C;margin-bottom:18px;padding-bottom:10px;border-bottom:2px solid #B3DD64;}
+.modal-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--border);}
+.loading{text-align:center;padding:36px;color:var(--muted);font-size:14px;}
+</style>
 </head>
 <body>
 
-  <!-- HEADER -->
-  <header style="background: #07583C; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; color: white;">
+<header>
+  <div>
+    <div class="header-title">Cronograma de Coaching</div>
+    <div class="header-subtitle">VIDAS — ÍNDICE DE PREVENÇÃO</div>
+  </div>
+  <div class="user-info">
+    <span>Olá, <strong id="user-nome">Carregando...</strong></span>
+    <button class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="sair()">Voltar ao Sistema IP</button>
+  </div>
+</header>
+
+<main>
+  <!-- FILTROS -->
+  <div class="form-row">
     <div>
-      <h1 style="font-size: 18px; font-weight: 800; letter-spacing: 0.5px;">Cronograma de Coaching</h1>
-      <p style="font-size: 11px; color: #B3DD64; font-family: 'DM Mono', monospace;">Sistema IP — VIDAS</p>
+      <label>Safra</label>
+      <select id="filtro-safra" onchange="renderCronograma()"><option value="">Carregando...</option></select>
     </div>
-    <div style="font-size: 13px;">
-      <span id="user-info">Carregando...</span>
-      <button onclick="sair()" style="margin-left: 10px; background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 6px; font-size: 11px; border:none; color:#fff; cursor:pointer;">Sair</button>
+    <div>
+      <label>Mês</label>
+      <input type="month" id="filtro-mes" onchange="renderCronograma()">
     </div>
-  </header>
+    <div>
+      <label>Gerência</label>
+      <select id="filtro-gerencia" onchange="renderCronograma()">
+        <option value="">Todas as Gerências</option>
+      </select>
+    </div>
+    <div style="flex:1; text-align:right;">
+      <button class="btn btn-secondary" onclick="renderCronograma()">🔄 Atualizar</button>
+    </div>
+  </div>
 
-  <main style="max-width: 1200px; margin: 24px auto; padding: 0 16px;">
+  <!-- TABELA DE CRONOGRAMA -->
+  <div class="table-wrap">
+    <div class="table-header">
+      <span class="table-title">📋 Acompanhamentos Planejados</span>
+    </div>
+    <div id="crono-lista">
+      <div class="loading">Selecione os filtros acima para carregar o cronograma.</div>
+    </div>
+  </div>
+</main>
+
+<!-- MODAL AGENDAR -->
+<div class="modal-overlay" id="modal-agendar">
+  <div class="modal">
+    <div class="modal-title">📅 Agendar Coaching</div>
+    <input type="hidden" id="agendar-id">
+    <div style="margin-bottom:14px;">
+      <label>Data Planejada</label>
+      <input type="date" id="agendar-data" style="width:100%">
+    </div>
+    <div style="margin-bottom:14px;">
+      <label>Técnico Responsável</label>
+      <input type="text" id="agendar-tecnico" style="width:100%" placeholder="Ex: João Silva">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="fecharModal('modal-agendar')">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarAgendamento()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL VALIDAR PDF (WeCheck) -->
+<div class="modal-overlay" id="modal-validar">
+  <div class="modal">
+    <div class="modal-title">📎 Validar PDF WeCheck</div>
+    <input type="hidden" id="validar-id">
+    <input type="hidden" id="validar-matricula">
+    <input type="hidden" id="validar-tipo">
     
-    <!-- FILTROS E AÇÕES -->
-    <div style="background: #fff; padding: 16px; border-radius: 10px; border: 1px solid #d0e4d0; margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justify-content: space-between;">
-      <div style="display: flex; gap: 16px; flex-wrap: wrap;">
-        <div>
-          <label style="font-size: 11px; color: #5a7a5a; font-weight: 600; display: block; margin-bottom: 4px;">Safra</label>
-          <select id="filtro-safra" onchange="carregarCronograma()" style="width: 150px;"></select>
-        </div>
-        <div>
-          <label style="font-size: 11px; color: #5a7a5a; font-weight: 600; display: block; margin-bottom: 4px;">Mês</label>
-          <input type="month" id="filtro-mes" onchange="carregarCronograma()" style="width: 150px;">
-        </div>
-        <div>
-          <label style="font-size: 11px; color: #5a7a5a; font-weight: 600; display: block; margin-bottom: 4px;">Gerência</label>
-          <select id="filtro-gerencia" onchange="carregarCronograma()" style="width: 250px;">
-            <option value="">Todas as Gerências</option>
-          </select>
-        </div>
-      </div>
-      <div style="display: flex; gap: 10px;">
-        <button class="btn btn-secondary" onclick="abrirModalNovo()">+ Novo Agendamento</button>
-        <button class="btn btn-primary" onclick="sincronizarComIP()" style="background: #1a73e8;">🔄 Sincronizar Notas com IP</button>
-      </div>
+    <div style="font-size:13px; color:var(--muted); margin-bottom:16px; line-height:1.4;">
+      Faça o upload do relatório PDF gerado pelo <b>WeCheck</b>. O sistema fará a leitura automática para confirmar a <b>Matrícula</b> e o <b>Tipo do Coaching</b> antes de dar a baixa.
     </div>
 
-    <!-- CARDS RESUMO -->
-    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px;" id="cards-resumo">
-      <!-- Preenchido via JS -->
+    <div style="margin-bottom:14px;">
+      <input type="file" id="validar-arquivo" accept="application/pdf" style="width:100%; padding:10px; background:#f9f9f9; border:1px dashed #07583C;">
     </div>
+    
+    <div id="validar-status" style="font-size:12px; font-weight:bold; margin-bottom:10px; font-family:'DM Mono', monospace;"></div>
 
-    <!-- TABELA -->
-    <div style="background: #fff; border-radius: 10px; border: 1px solid #d0e4d0; overflow: hidden;">
-      <div style="padding: 14px 20px; background: #e8f5ee; border-bottom: 1px solid #d0e4d0;">
-        <h2 style="font-size: 14px; font-weight: 700; color: #07583C;">Lista de Acompanhamentos</h2>
-      </div>
-      <div style="overflow-x: auto;">
-        <table style="width: 100%; text-align: left; border-collapse: collapse;">
-          <thead>
-            <tr style="border-bottom: 2px solid #e0f0e8;">
-              <th style="padding: 12px 20px; font-size: 11px; color: #5a7a5a; text-transform: uppercase;">Líder Avaliado</th>
-              <th style="padding: 12px 20px; font-size: 11px; color: #5a7a5a; text-transform: uppercase;">Gerência</th>
-              <th style="padding: 12px 20px; font-size: 11px; color: #5a7a5a; text-transform: uppercase;">Tipo</th>
-              <th style="padding: 12px 20px; font-size: 11px; color: #5a7a5a; text-transform: uppercase;">Status</th>
-              <th style="padding: 12px 20px; font-size: 11px; color: #5a7a5a; text-transform: uppercase;">Agendamento</th>
-              <th style="padding: 12px 20px; font-size: 11px; color: #5a7a5a; text-transform: uppercase;">Ações</th>
-            </tr>
-          </thead>
-          <tbody id="tabela-corpo">
-            <tr><td colspan="6" style="padding: 20px; text-align: center; color: #888;">Carregando dados...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-  </main>
-
-  <!-- MODAL: NOVO/EDITAR -->
-  <div class="modal-overlay" id="modal-novo" style="z-index: 100;">
-    <div class="modal">
-      <h3 style="font-size: 16px; font-weight: 700; color: #07583C; margin-bottom: 16px; border-bottom: 2px solid #B3DD64; padding-bottom: 8px;">📋 Adicionar ao Cronograma</h3>
-      <div style="display: flex; flex-direction: column; gap: 12px;">
-        <div><label style="font-size: 12px; color: #5a7a5a;">Nome do Líder</label><input type="text" id="form-nome" placeholder="Ex: João da Silva"></div>
-        <div><label style="font-size: 12px; color: #5a7a5a;">Matrícula</label><input type="text" id="form-matricula" placeholder="Ex: 12345"></div>
-        <div><label style="font-size: 12px; color: #5a7a5a;">Gerência</label><select id="form-gerencia"></select></div>
-        <div>
-          <label style="font-size: 12px; color: #5a7a5a;">Tipo de Coaching</label>
-          <select id="form-tipo">
-            <option value="Inspeção">Inspeção de SSMA</option>
-            <option value="Observação">Observação Comportamental</option>
-          </select>
-        </div>
-      </div>
-      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px;">
-        <button class="btn btn-secondary" onclick="fecharModal('modal-novo')">Cancelar</button>
-        <button class="btn btn-primary" onclick="salvarNovo()">Salvar</button>
-      </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="fecharModal('modal-validar')">Cancelar</button>
+      <button class="btn btn-primary" id="btn-processar-pdf" onclick="processarPDFWeCheck()">🔍 Ler e Validar</button>
     </div>
   </div>
+</div>
 
-  <!-- MODAL: AGENDAR -->
-  <div class="modal-overlay" id="modal-agendar" style="z-index: 100;">
-    <div class="modal">
-      <h3 style="font-size: 16px; font-weight: 700; color: #07583C; margin-bottom: 16px; border-bottom: 2px solid #B3DD64; padding-bottom: 8px;">📅 Agendar Coaching</h3>
-      <input type="hidden" id="agendar-id">
-      <div style="display: flex; flex-direction: column; gap: 12px;">
-        <div><label style="font-size: 12px; color: #5a7a5a;">Técnico Responsável</label><input type="text" id="agendar-tecnico" placeholder="Nome do Auditor/Técnico"></div>
-        <div><label style="font-size: 12px; color: #5a7a5a;">Data e Hora</label><input type="datetime-local" id="agendar-data"></div>
-      </div>
-      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px;">
-        <button class="btn btn-secondary" onclick="fecharModal('modal-agendar')">Cancelar</button>
-        <button class="btn btn-primary" onclick="salvarAgendamento()">Confirmar Agendamento</button>
-      </div>
-    </div>
-  </div>
+<script>
+// Inicialização do PDF.js Worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
-  <!-- MODAL: VALIDAR PDF (LEITURA INTELIGENTE) -->
-  <div class="modal-overlay" id="modal-validar" style="z-index: 100;">
-    <div class="modal">
-      <h3 style="font-size: 16px; font-weight: 700; color: #07583C; margin-bottom: 16px; border-bottom: 2px solid #B3DD64; padding-bottom: 8px;">🤖 Validar Checklist (WeCheck)</h3>
-      <input type="hidden" id="validar-id">
-      <input type="hidden" id="validar-matricula">
+// Supabase Config
+const SB_URL = 'https://umpctnchhmyvpjwxllaj.supabase.co';
+const SB_KEY = 'sb_publishable_lxiF04jATB1HMLINX-FvOg_3JOjXxrQ';
+const SB_OPTS = { auth: { persistSession:true, storageKey:'sistema-ip-auth', autoRefreshToken:true } };
+const sb = supabase.createClient(SB_URL, SB_KEY, SB_OPTS);
+
+let usuario = null;
+let safras = [];
+let gerencias = [];
+
+// ── INIT ──
+async function init() {
+  const { data:{ session } } = await sb.auth.getSession();
+  if (!session) {
+    alert("Você precisa fazer login no Sistema IP primeiro.");
+    window.location.href = 'index.html'; // ajuste para a URL da sua matriz
+    return;
+  }
+  
+  const { data: userData } = await sb.from('usuarios').select('*, gerencias(nome)').eq('auth_id', session.user.id).single();
+  usuario = userData;
+  document.getElementById('user-nome').textContent = usuario?.nome || 'Usuário';
+
+  // Configura Mês Atual por padrão
+  const agora = new Date();
+  document.getElementById('filtro-mes').value = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`;
+
+  await carregarFiltros();
+  renderCronograma();
+}
+
+async function carregarFiltros() {
+  // Safras
+  const { data: s } = await sb.from('safras').select('*').order('ano_ini', { ascending: false });
+  safras = s || [];
+  const sfEl = document.getElementById('filtro-safra');
+  sfEl.innerHTML = safras.map(saf => `<option value="${saf.id}">${saf.nome}</option>`).join('');
+  
+  // Gerências
+  const { data: g } = await sb.from('gerencias').select('id, nome, unidades(nome)').eq('ativo', true).order('nome');
+  gerencias = g || [];
+  const gerEl = document.getElementById('filtro-gerencia');
+  gerEl.innerHTML = '<option value="">Todas as Gerências</option>' + 
+    gerencias.map(ger => `<option value="${ger.id}">${ger.nome} (${ger.unidades?.nome || ''})</option>`).join('');
+
+  // Se o usuário for perfil "Gerência", trava no filtro dele
+  if (usuario.perfil === 'gerencia' && usuario.gerencia_id) {
+    gerEl.value = usuario.gerencia_id;
+    gerEl.disabled = true;
+  }
+}
+
+// ── RENDERIZAÇÃO DA TABELA ──
+async function renderCronograma() {
+  const safraId = document.getElementById('filtro-safra')?.value;
+  const mes = document.getElementById('filtro-mes')?.value;
+  const gerId = document.getElementById('filtro-gerencia')?.value;
+
+  if (!safraId || !mes) {
+    document.getElementById('crono-lista').innerHTML = '<div class="alert alert-info" style="padding:15px">Selecione a Safra e o Mês para ver o cronograma.</div>';
+    return;
+  }
+
+  document.getElementById('crono-lista').innerHTML = '<div class="loading">A carregar os dados...</div>';
+
+  let q = sb.from('cronograma_coaching').select('*, gerencias(nome, unidades(nome))')
+    .eq('safra_id', safraId).eq('mes', mes).order('lider_nome');
+  
+  if (gerId) q = q.eq('gerencia_id', gerId);
+
+  const { data, error } = await q;
+
+  if (error || !data || data.length === 0) {
+    document.getElementById('crono-lista').innerHTML = '<div style="padding:20px; color:var(--muted); text-align:center;">Nenhum coaching registado para este período.</div>';
+    return;
+  }
+
+  // Lógica para Baixa Manual Retroativa
+  const agora = new Date();
+  const mesAtualSistema = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`;
+  
+  // Retroativo se o mês filtrado for menor que o mês atual
+  const isRetroativo = mes < mesAtualSistema;
+  const podeDarBaixaManual = isRetroativo && (usuario.perfil === 'admin' || usuario.perfil === 'gestor');
+
+  const html = data.map(c => {
+    let statusClass = c.status === 'Realizado' ? 'badge-green' : (c.status === 'Agendado' ? 'badge-blue' : 'badge-yellow');
+    
+    // AÇÕES DISPONÍVEIS
+    let acoesHtml = '';
+    
+    if (c.status !== 'Realizado') {
+      acoesHtml += `<button class="btn btn-secondary btn-sm" onclick="abrirModalAgendar(${c.id}, '${c.data_agendada || ''}', '${c.tecnico_nome || ''}')">📅 Agendar</button>`;
       
-      <p style="font-size: 13px; color: #5a7a5a; margin-bottom: 16px;">O sistema vai ler o PDF para confirmar se é um checklist de Coaching válido e se a matrícula bate com a do líder (<b id="lbl-mat-validar"></b>).</p>
-      
-      <div style="border: 2px dashed #07583C; border-radius: 8px; padding: 30px; text-align: center; background: #f0f9f0; cursor: pointer;" onclick="document.getElementById('input-pdf').click()">
-        <span style="font-size: 24px;">📄</span><br>
-        <span style="font-size: 13px; font-weight: 600; color: #07583C;">Clique para selecionar o PDF</span>
-        <input type="file" id="input-pdf" accept="application/pdf" style="display: none;" onchange="processarLeituraPDF(event)">
-      </div>
-      
-      <div id="status-leitura" style="margin-top: 16px; font-size: 12px; font-family: 'DM Mono', monospace; color: #1a73e8; display: none;"></div>
-
-      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px;">
-        <button class="btn btn-secondary" onclick="fecharModal('modal-validar')">Cancelar</button>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    // Configuração Supabase (Mesmo banco do Sistema IP Matriz)
-    const { createClient } = supabase;
-    const SB_URL = 'https://umpctnchhmyvpjwxllaj.supabase.co';
-    const SB_KEY = 'sb_publishable_lxiF04jATB1HMLINX-FvOg_3JOjXxrQ';
-    const sb = createClient(SB_URL, SB_KEY);
-
-    // Inicialização do PDF.js Worker
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-
-    let cronogramaData = [];
-    let gerenciasData = [];
-
-    // --- SETUP INICIAL ---
-    async function init() {
-      const { data: { session } } = await sb.auth.getSession();
-      if (!session) { alert('Você precisa estar logado no Sistema IP para acessar.'); return; }
-      
-      document.getElementById('user-info').textContent = session.user.email;
-      
-      // Carrega Safras
-      const { data: safras } = await sb.from('safras').select('*').order('ano_ini', { ascending: false });
-      if(safras) {
-        document.getElementById('filtro-safra').innerHTML = safras.map(s => `<option value="${s.id}">${s.nome}</option>`).join('');
+      if (podeDarBaixaManual) {
+        acoesHtml += `<button class="btn btn-secondary btn-sm" style="background:#fce8e6; color:#d93025; border-color:#fce8e6;" onclick="darBaixaManual(${c.id}, ${c.gerencia_id}, '${c.mes}')">✅ Baixa Manual (Sem PDF)</button>`;
+      } else {
+        acoesHtml += `<button class="btn btn-primary btn-sm" onclick="abrirModalValidar(${c.id}, '${c.matricula}', '${c.tipo}')">📎 Validar WeCheck</button>`;
       }
-
-      // Seta mês atual
-      const hoje = new Date();
-      document.getElementById('filtro-mes').value = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}`;
-
-      // Carrega Gerências
-      const { data: gers } = await sb.from('gerencias').select('id, nome, unidades(nome)').eq('ativo', true).order('nome');
-      if(gers) {
-        gerenciasData = gers;
-        const opts = gers.map(g => `<option value="${g.id}">${g.nome} (${g.unidades?.nome || ''})</option>`).join('');
-        document.getElementById('filtro-gerencia').innerHTML += opts;
-        document.getElementById('form-gerencia').innerHTML = opts;
-      }
-
-      carregarCronograma();
-    }
-
-    // --- CARREGAR DADOS ---
-    async function carregarCronograma() {
-      const safra = document.getElementById('filtro-safra').value;
-      const mes = document.getElementById('filtro-mes').value;
-      const ger = document.getElementById('filtro-gerencia').value;
-
-      let q = sb.from('cronograma_coaching').select('*, gerencias(nome, unidades(nome))').eq('mes', mes).eq('safra_id', safra).order('lider_nome');
-      if (ger) q = q.eq('gerencia_id', ger);
-
-      const { data, error } = await q;
-      if (error) { console.error(error); return; }
-      
-      cronogramaData = data || [];
-      renderizarTabela();
-      renderizarResumo();
-    }
-
-    function renderizarResumo() {
-      const total = cronogramaData.length;
-      const realizados = cronogramaData.filter(c => c.status === 'Realizado').length;
-      const agendados = cronogramaData.filter(c => c.status === 'Agendado').length;
-      const pendentes = cronogramaData.filter(c => c.status === 'Pendente').length;
-      const pct = total > 0 ? ((realizados / total) * 100).toFixed(0) : 0;
-
-      document.getElementById('cards-resumo').innerHTML = `
-        <div style="background:#fff; padding:16px; border-radius:10px; border-left:4px solid #1a73e8; border-top:1px solid #eee; border-right:1px solid #eee; border-bottom:1px solid #eee;">
-          <div style="font-size:11px; color:#888; text-transform:uppercase;">Total Previsto</div>
-          <div style="font-size:24px; font-weight:800; color:#1a2e1a;">${total}</div>
-        </div>
-        <div style="background:#fff; padding:16px; border-radius:10px; border-left:4px solid #d93025; border-top:1px solid #eee; border-right:1px solid #eee; border-bottom:1px solid #eee;">
-          <div style="font-size:11px; color:#888; text-transform:uppercase;">Pendentes</div>
-          <div style="font-size:24px; font-weight:800; color:#d93025;">${pendentes}</div>
-        </div>
-        <div style="background:#fff; padding:16px; border-radius:10px; border-left:4px solid #c47d0e; border-top:1px solid #eee; border-right:1px solid #eee; border-bottom:1px solid #eee;">
-          <div style="font-size:11px; color:#888; text-transform:uppercase;">Agendados</div>
-          <div style="font-size:24px; font-weight:800; color:#c47d0e;">${agendados}</div>
-        </div>
-        <div style="background:#fff; padding:16px; border-radius:10px; border-left:4px solid #07583C; border-top:1px solid #eee; border-right:1px solid #eee; border-bottom:1px solid #eee;">
-          <div style="font-size:11px; color:#888; text-transform:uppercase;">Realizados (Baixados)</div>
-          <div style="font-size:24px; font-weight:800; color:#07583C;">${realizados} <span style="font-size:12px; color:#888; font-weight:normal;">(${pct}%)</span></div>
-        </div>
-      `;
-    }
-
-    function renderizarTabela() {
-      const tb = document.getElementById('tabela-corpo');
-      if (!cronogramaData.length) {
-        tb.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#888;">Nenhum coaching previsto para os filtros selecionados.</td></tr>';
-        return;
-      }
-
-      tb.innerHTML = cronogramaData.map(c => {
-        let statusClass = 'st-pendente';
-        if (c.status === 'Agendado') statusClass = 'st-agendado';
-        if (c.status === 'Realizado') statusClass = 'st-realizado';
-
-        let btnAcao = '';
-        if (c.status === 'Pendente') {
-          btnAcao = `<button class="btn btn-secondary btn-sm" onclick="abrirModalAgendar(${c.id})">📅 Agendar</button>`;
-        } else if (c.status === 'Agendado') {
-          btnAcao = `<button class="btn btn-primary btn-sm" style="background:#1a73e8;" onclick="abrirModalValidar(${c.id}, '${c.matricula}')">📄 Ler PDF (Baixa)</button>`;
-        } else {
-          btnAcao = `<a href="${c.evidencia_url}" target="_blank" style="color:#07583C; font-size:12px; font-weight:bold; text-decoration:underline;">📎 Ver Evidência</a>`;
-        }
-
-        const dataAg = c.data_agendada ? new Date(c.data_agendada).toLocaleString('pt-BR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : '—';
-        const tec = c.tecnico_nome ? `<br><span style="font-size:10px;color:#888;">Tec: ${c.tecnico_nome}</span>` : '';
-
-        return `<tr style="border-bottom: 1px solid #eee; transition: background 0.2s;" onmouseover="this.style.background='#f9fbf9'" onmouseout="this.style.background='transparent'">
-          <td style="padding: 12px 20px;">
-            <b style="color:#1a2e1a; font-size:13px;">${c.lider_nome}</b><br>
-            <span class="mono" style="font-size:11px; color:#888;">Mat: ${c.matricula}</span>
-          </td>
-          <td style="padding: 12px 20px; font-size: 12px; color: #5a7a5a;">${c.gerencias?.nome} <span style="font-size:10px;color:#1a73e8;">(${c.gerencias?.unidades?.nome})</span></td>
-          <td style="padding: 12px 20px; font-size: 12px; font-weight:600;">${c.tipo}</td>
-          <td style="padding: 12px 20px;"><span class="status-badge ${statusClass}">${c.status}</span></td>
-          <td style="padding: 12px 20px; font-size: 12px; color: #5a7a5a;">${dataAg} ${tec}</td>
-          <td style="padding: 12px 20px;">${btnAcao}</td>
-        </tr>`;
-      }).join('');
-    }
-
-    // --- MODAIS E AÇÕES ---
-    function abrirModalNovo() { document.getElementById('modal-novo').style.display = 'flex'; }
-    function fecharModal(id) { document.getElementById(id).style.display = 'none'; }
-
-    async function salvarNovo() {
-      const nome = document.getElementById('form-nome').value.trim();
-      const matricula = document.getElementById('form-matricula').value.trim();
-      const gerId = document.getElementById('form-gerencia').value;
-      const tipo = document.getElementById('form-tipo').value;
-      const safraId = document.getElementById('filtro-safra').value;
-      const mes = document.getElementById('filtro-mes').value;
-
-      if (!nome || !matricula || !gerId) { alert('Preencha nome, matrícula e gerência.'); return; }
-
-      await sb.from('cronograma_coaching').insert({
-        safra_id: safraId, mes: mes, gerencia_id: gerId, lider_nome: nome, matricula: matricula, tipo: tipo, status: 'Pendente'
-      });
-      fecharModal('modal-novo');
-      carregarCronograma();
-    }
-
-    function abrirModalAgendar(id) {
-      document.getElementById('agendar-id').value = id;
-      document.getElementById('modal-agendar').style.display = 'flex';
-    }
-
-    async function salvarAgendamento() {
-      const id = document.getElementById('agendar-id').value;
-      const tec = document.getElementById('agendar-tecnico').value.trim();
-      const data = document.getElementById('agendar-data').value;
-
-      if (!tec || !data) { alert('Preencha técnico e data.'); return; }
-
-      await sb.from('cronograma_coaching').update({ status: 'Agendado', tecnico_nome: tec, data_agendada: data }).eq('id', id);
-      fecharModal('modal-agendar');
-      carregarCronograma();
-    }
-
-    // --- LEITURA DO PDF (O Robô) ---
-    function abrirModalValidar(id, matricula) {
-      document.getElementById('validar-id').value = id;
-      document.getElementById('validar-matricula').value = matricula;
-      document.getElementById('lbl-mat-validar').textContent = matricula;
-      document.getElementById('status-leitura').style.display = 'none';
-      document.getElementById('input-pdf').value = '';
-      document.getElementById('modal-validar').style.display = 'flex';
-    }
-
-    async function processarLeituraPDF(evento) {
-      const file = evento.target.files[0];
-      if (!file) return;
-
-      const st = document.getElementById('status-leitura');
-      st.style.display = 'block';
-      st.style.color = '#1a73e8';
-      st.innerHTML = '⏳ Lendo o PDF, aguarde...';
-
-      try {
-        // 1. Extrai texto do PDF
-        const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        let textoCompleto = '';
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const textContent = await page.getTextContent();
-          textoCompleto += textContent.items.map(item => item.str).join(' ');
-        }
-
-        // 2. Regras de Validação (Regex)
-        const idRow = document.getElementById('validar-id').value;
-        const matriculaEsperada = document.getElementById('validar-matricula').value;
-        
-        // Verifica se é de fato um checklist de coaching (procura a palavra no texto todo)
-        if (!textoCompleto.toLowerCase().includes('coaching')) {
-          throw new Error('O arquivo não parece ser um checklist de Coaching. A palavra "Coaching" não foi encontrada no documento.');
-        }
-
-        // Verifica a matrícula. Aqui procuramos a matrícula exata em algum lugar do texto
-        if (!textoCompleto.includes(matriculaEsperada)) {
-          throw new Error(`A matrícula ${matriculaEsperada} não foi encontrada neste PDF. O arquivo pertence a outro líder?`);
-        }
-
-        st.innerHTML = '✅ PDF Válido! Fazendo upload para o banco de dados...';
-
-        // 3. Upload pro Supabase Storage
-        const ext = file.name.split('.').pop() || 'pdf';
-        const filePath = `coaching/${Date.now()}_${matriculaEsperada}.${ext}`;
-        const { error: upErr } = await sb.storage.from('evidencias').upload(filePath, file);
-        if (upErr) throw new Error('Erro ao salvar PDF: ' + upErr.message);
-
-        const { data: pubData } = sb.storage.from('evidencias').getPublicUrl(filePath);
-
-        // 4. Atualiza a tabela dando Baixa (Status = Realizado)
-        await sb.from('cronograma_coaching').update({
-          status: 'Realizado',
-          evidencia_url: pubData.publicUrl
-        }).eq('id', idRow);
-
-        st.style.color = '#07583C';
-        st.innerHTML = '🎉 Sucesso! Baixa realizada automaticamente.';
-        setTimeout(() => {
-          fecharModal('modal-validar');
-          carregarCronograma();
-        }, 2000);
-
-      } catch (err) {
-        st.style.color = '#d93025';
-        st.innerHTML = '❌ Erro de Validação:<br>' + err.message;
+    } else {
+      if (c.evidencia_url) {
+        acoesHtml = `<a href="${c.evidencia_url}" target="_blank" class="btn btn-secondary btn-sm" style="background:#e8f5ee; color:#07583C; border-color:#d0e4d0; text-decoration:none;">📎 Ver PDF Salvo</a>`;
+      } else {
+        acoesHtml = `<span style="font-size: 11px; color: var(--muted); font-style: italic;">${c.tecnico_nome || 'Baixa Retroativa'}</span>`;
       }
     }
 
-    // --- INTEGRAÇÃO (SINCRONIZAÇÃO COM O IP) ---
-    async function sincronizarComIP() {
-      const safraId = document.getElementById('filtro-safra').value;
-      const mes = document.getElementById('filtro-mes').value;
-      
-      if (!confirm(`Deseja consolidar o cronograma deste mês (${mes}) e jogar a nota final das gerências para o Sistema IP?`)) return;
+    return `
+      <tr>
+        <td><b>${c.lider_nome}</b><br><span style="font-size:11px; color:var(--muted)">Mat: ${c.matricula}</span></td>
+        <td>${c.gerencias?.nome} <br><span style="font-size:11px; color:var(--blue)">${c.gerencias?.unidades?.nome}</span></td>
+        <td><b>${c.tipo}</b></td>
+        <td><span class="badge ${statusClass}">${c.status}</span></td>
+        <td>
+          <div style="font-size:12px; color:var(--muted)">
+            ${c.data_agendada ? '📅 ' + new Date(c.data_agendada + 'T12:00:00').toLocaleDateString('pt-BR') : 'Sem data'}<br>
+            ${c.tecnico_nome ? '👤 ' + c.tecnico_nome : 'Técnico ñ def.'}
+          </div>
+        </td>
+        <td>
+          <div style="display:flex; gap:6px; flex-wrap: wrap;">
+            ${acoesHtml}
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
 
-      // Busca indicadores base para saber os IDs
-      const { data: inds } = await sb.from('indicadores').select('id, nome').in('nome', ['Nº de Inspeções com Coaching de SSMA', 'Nº de Observações Comportamentais com Coaching de SSMA']);
-      const idInsp = inds.find(i => i.nome.includes('Inspeções'))?.id;
-      const idObs = inds.find(i => i.nome.includes('Observações'))?.id;
+  document.getElementById('crono-lista').innerHTML = `
+    <table style="width:100%; border-collapse:collapse; font-size:13px">
+      <thead><tr>
+        <th>Líder (Matrícula)</th>
+        <th>Gerência</th>
+        <th>Tipo</th>
+        <th>Status</th>
+        <th>Agendamento</th>
+        <th>Ações</th>
+      </tr></thead>
+      <tbody>${html}</tbody>
+    </table>
+  `;
+}
 
-      if (!idInsp || !idObs) { alert('Os indicadores de Coaching não estão cadastrados no Sistema IP. Crie eles primeiro.'); return; }
+// ── AÇÕES DE AGENDAMENTO E BAIXA MANUAL ──
+function abrirModalAgendar(id, dataAgendada, tecnico) {
+  document.getElementById('agendar-id').value = id;
+  document.getElementById('agendar-data').value = dataAgendada;
+  document.getElementById('agendar-tecnico').value = tecnico;
+  document.getElementById('modal-agendar').classList.add('show');
+}
 
-      // Agrupa os dados da tela por gerência
-      const consolidados = {};
-      cronogramaData.forEach(c => {
-        if (!consolidados[c.gerencia_id]) {
-          consolidados[c.gerencia_id] = { prevInsp: 0, realInsp: 0, prevObs: 0, realObs: 0 };
-        }
-        const g = consolidados[c.gerencia_id];
-        if (c.tipo.includes('Inspeção')) { g.prevInsp++; if(c.status==='Realizado') g.realInsp++; }
-        if (c.tipo.includes('Observação')) { g.prevObs++; if(c.status==='Realizado') g.realObs++; }
-      });
+async function salvarAgendamento() {
+  const id = document.getElementById('agendar-id').value;
+  const dt = document.getElementById('agendar-data').value;
+  const tec = document.getElementById('agendar-tecnico').value;
 
-      // Simula a injeção na tabela lancamentos/lancamento_itens
-      // Na vida real, você chamaria a mesma lógica de cálculo (calcPontGer) que usamos no Hub
-      let atualizados = 0;
-      for (const gerId in consolidados) {
-        const dados = consolidados[gerId];
-        
-        // 1. Garante que o lançamento base existe
-        const { data: ex } = await sb.from('lancamentos').select('id').eq('gerencia_id', gerId).eq('mes', mes).limit(1);
-        let lancId = ex?.[0]?.id;
-        if (!lancId) {
-          const { data: ins } = await sb.from('lancamentos').insert({ gerencia_id: gerId, safra_id: safraId, mes: mes, periodo: mes }).select('id');
-          lancId = ins?.[0]?.id;
-        }
+  const { error } = await sb.from('cronograma_coaching').update({
+    data_agendada: dt || null,
+    tecnico_nome: tec || null,
+    status: (dt || tec) ? 'Agendado' : 'Pendente'
+  }).eq('id', id);
 
-        // 2. Atualiza/Insere os Itens
-        await sb.from('lancamento_itens').delete().eq('lancamento_id', lancId).in('indicador_id', [idInsp, idObs]);
-        await sb.from('lancamento_itens').insert([
-          { lancamento_id: lancId, indicador_id: idInsp, previsto: dados.prevInsp, realizado: dados.realInsp },
-          { lancamento_id: lancId, indicador_id: idObs, previsto: dados.prevObs, realizado: dados.realObs }
-        ]);
-        
-        atualizados++;
-      }
+  if (error) {
+    alert("Erro ao agendar: " + error.message);
+  } else {
+    fecharModal('modal-agendar');
+    renderCronograma();
+  }
+}
 
-      alert(`✅ Sincronização concluída! ${atualizados} gerência(s) atualizada(s) no IP matriz.\n(Nota: Para atualizar a nota global do IP, abra a tela do Lançamento no sistema matriz e clique em Salvar para rodar os cálculos de peso).`);
+async function darBaixaManual(id, gerencia_id, mes) {
+  if (!confirm("Confirmar a baixa manual deste coaching retroativo sem evidência em PDF?")) return;
+  
+  const tecnicoResponsavel = 'Baixa Retroativa (' + (usuario?.nome || 'Admin') + ')';
+
+  const { error } = await sb.from('cronograma_coaching').update({ 
+    status: 'Realizado',
+    tecnico_nome: tecnicoResponsavel
+  }).eq('id', id);
+
+  if (error) {
+    alert("Erro ao dar baixa: " + error.message);
+  } else {
+    alert("✅ Baixa manual realizada com sucesso!");
+    renderCronograma();
+    // Nota: O cálculo final da gerência seria re-engatilhado no sistema matriz, 
+    // ou podemos criar uma função aqui que chame o update em `lancamentos`.
+  }
+}
+
+// ── LEITURA E VALIDAÇÃO DE PDF (WECHECK) ──
+function abrirModalValidar(id, matricula, tipo) {
+  document.getElementById('validar-id').value = id;
+  document.getElementById('validar-matricula').value = matricula;
+  document.getElementById('validar-tipo').value = tipo; // 'Inspeção' ou 'Observação'
+  document.getElementById('validar-arquivo').value = '';
+  document.getElementById('validar-status').innerHTML = '';
+  
+  const btn = document.getElementById('btn-processar-pdf');
+  btn.disabled = false;
+  btn.textContent = '🔍 Ler e Validar';
+
+  document.getElementById('modal-validar').classList.add('show');
+}
+
+// Extrai texto de todas as páginas do PDF
+async function extractTextFromPDF(pdfData) {
+  const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+  const pdf = await loadingTask.promise;
+  let fullText = '';
+  
+  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+    const page = await pdf.getPage(pageNum);
+    const textContent = await page.getTextContent();
+    const pageText = textContent.items.map(item => item.str).join(' ');
+    fullText += pageText + ' ';
+  }
+  return fullText;
+}
+
+async function processarPDFWeCheck() {
+  const fileInput = document.getElementById('validar-arquivo');
+  const file = fileInput.files[0];
+  if (!file) { alert("Por favor, anexe o PDF do WeCheck."); return; }
+  
+  const idCrono = document.getElementById('validar-id').value;
+  const matriculaEsperada = document.getElementById('validar-matricula').value.trim();
+  const tipoEsperado = document.getElementById('validar-tipo').value;
+  const statusEl = document.getElementById('validar-status');
+  const btn = document.getElementById('btn-processar-pdf');
+  
+  btn.disabled = true;
+  btn.textContent = 'Lendo PDF...';
+  statusEl.innerHTML = '<span style="color:#c47d0e">⏳ Extraindo texto do arquivo...</span>';
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const textoPDF = await extractTextFromPDF(arrayBuffer);
+    const textoUpper = textoPDF.toUpperCase();
+    
+    console.log("Texto extraído (amostra):", textoUpper.substring(0, 500));
+
+    // 1. Validar se o arquivo é do tipo "Coaching" e se o subtipo bate
+    const ehCoaching = textoUpper.includes("COACHING");
+    // Flexibilidade na busca da palavra chave
+    const bateTipo = tipoEsperado === 'Inspeção' 
+                     ? (textoUpper.includes("INSPEÇÃO") || textoUpper.includes("INSPECAO"))
+                     : (textoUpper.includes("OBSERVAÇÃO") || textoUpper.includes("OBSERVACAO") || textoUpper.includes("COMPORTAMENTAL"));
+
+    if (!ehCoaching || !bateTipo) {
+      statusEl.innerHTML = `<span style="color:#d93025">❌ O PDF não parece ser um formulário de "Coaching de ${tipoEsperado}".</span>`;
+      btn.disabled = false;
+      btn.textContent = 'Tentar Novamente';
+      return;
     }
 
-    function sair() { window.close(); }
+    // 2. Validar a Matrícula
+    if (!textoUpper.includes(matriculaEsperada)) {
+      statusEl.innerHTML = `<span style="color:#d93025">❌ A Matrícula ${matriculaEsperada} não foi encontrada neste PDF. Verifique o arquivo correto.</span>`;
+      btn.disabled = false;
+      btn.textContent = 'Tentar Novamente';
+      return;
+    }
 
-    document.addEventListener('DOMContentLoaded', init);
-  </script>
+    // Se chegou aqui, as validações básicas passaram.
+    statusEl.innerHTML = '<span style="color:#07583C">✅ Leitura validada! Fazendo upload e salvando...</span>';
+
+    // 3. Fazer Upload do PDF para o Supabase Storage
+    const mes = document.getElementById('filtro-mes').value;
+    const nomeArquivoLimpo = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+    const path = `coaching/${mes}/${idCrono}_${Date.now()}_${nomeArquivoLimpo}`;
+    
+    const { error: upError } = await sb.storage.from('evidencias').upload(path, file);
+    if (upError) throw upError;
+
+    const { data: pubUrl } = sb.storage.from('evidencias').getPublicUrl(path);
+
+    // 4. Atualizar registro no banco
+    const { error: dbError } = await sb.from('cronograma_coaching').update({
+      status: 'Realizado',
+      evidencia_url: pubUrl.publicUrl,
+      tecnico_nome: 'Validado Via WeCheck (' + usuario.nome + ')'
+    }).eq('id', idCrono);
+
+    if (dbError) throw dbError;
+
+    alert("✅ Coaching validado e baixado com sucesso!");
+    fecharModal('modal-validar');
+    renderCronograma();
+
+  } catch (err) {
+    console.error(err);
+    statusEl.innerHTML = `<span style="color:#d93025">❌ Erro no processamento: ${err.message}</span>`;
+    btn.disabled = false;
+    btn.textContent = 'Tentar Novamente';
+  }
+}
+
+// ── UTILITARIOS ──
+function fecharModal(id) {
+  document.getElementById(id).classList.remove('show');
+}
+
+function sair() {
+  window.location.href = 'index.html'; // Retorna pro sistema principal
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
 </body>
 </html>
-```
-
-### Por que esse formato resolve a sua dor:
-1. **O Cronograma Fica Vivo:** Em vez de olhar pro Excel, a equipe abre esse sistema, vê quem está agendado e quem está vermelho (pendente).
-2. **O "Leitor Robô":** Eu coloquei um campo pontilhado na tela. Quando o técnico joga o PDF lá dentro, o `pdf.js` lê todo o texto oculto do arquivo em milissegundos. Ele procura a palavra "Coaching" e o número da matrícula. Se o WeCheck gerar certinho, a "baixa" acontece sem ninguém precisar digitar números de previsto x realizado.
-3. **Botão de Sincronizar:** No final do mês, basta clicar no botão azul lá em cima. Ele pega todos os agendamentos, consolida por gerência (ex: 5 previstos e 3 concluídos) e injeta silenciosamente na tabela de `lancamentos` do seu sistema principal, atualizando os gráficos da diretoria!

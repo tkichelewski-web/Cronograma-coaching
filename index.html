@@ -67,6 +67,11 @@ tr:hover td{background:var(--surface2);}
 .modal{background:#fff;border-radius:12px;padding:28px;width:460px;max-width:95vw;box-shadow:0 8px 40px rgba(0,0,0,0.15);}
 .modal-title{font-size:16px;font-weight:800;color:#07583C;margin-bottom:18px;padding-bottom:10px;border-bottom:2px solid #B3DD64;}
 .modal-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--border);}
+.etapas{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px;}
+.etapa{font-size:10px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:10px;border:1px solid var(--border);color:var(--muted);background:#fff;}
+.etapa.ok{background:var(--green-dim);color:#07583C;border-color:#b7dcc6;font-weight:700;}
+.btn-ok{background:#e8f5ee;color:#07583C;border:1px solid #d0e4d0;text-decoration:none;}
+.resumo-pdf{font-size:12px;line-height:1.6;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;display:none;}
 .loading{text-align:center;padding:36px;color:var(--muted);font-size:14px;}
 </style>
 </head>
@@ -139,23 +144,21 @@ tr:hover td{background:var(--surface2);}
   </div>
 </div>
 
-<!-- MODAL VALIDAR PDF (WeCheck) -->
+<!-- MODAL VALIDAR PDF (WeCheck) — usado para as duas etapas: Técnico e Líder -->
 <div class="modal-overlay" id="modal-validar">
   <div class="modal">
-    <div class="modal-title">📎 Validar PDF WeCheck</div>
+    <div class="modal-title" id="validar-titulo">📎 Validar PDF WeCheck</div>
     <input type="hidden" id="validar-id">
-    <input type="hidden" id="validar-matricula">
-    <input type="hidden" id="validar-tipo">
-    
-    <div style="font-size:13px; color:var(--muted); margin-bottom:16px; line-height:1.4;">
-      Faça o upload do relatório PDF gerado pelo <b>WeCheck</b>. O sistema fará a leitura automática para confirmar a <b>Matrícula</b> e o <b>Tipo do Coaching</b> antes de dar a baixa.
-    </div>
+    <input type="hidden" id="validar-etapa">
+
+    <div id="validar-instrucao" style="font-size:13px; color:var(--muted); margin-bottom:16px; line-height:1.5;"></div>
 
     <div style="margin-bottom:14px;">
       <input type="file" id="validar-arquivo" accept="application/pdf" style="width:100%; padding:10px; background:#f9f9f9; border:1px dashed #07583C;">
     </div>
-    
-    <div id="validar-status" style="font-size:12px; font-weight:bold; margin-bottom:10px; font-family:'DM Mono', monospace;"></div>
+
+    <div class="resumo-pdf" id="validar-resumo"></div>
+    <div id="validar-status" style="font-size:12px; font-weight:bold; margin-bottom:10px; font-family:'DM Mono', monospace; line-height:1.5;"></div>
 
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="fecharModal('modal-validar')">Cancelar</button>
@@ -175,6 +178,7 @@ const SB_OPTS = { auth: { persistSession:true, storageKey:'sistema-ip-auth', aut
 const sb = supabase.createClient(SB_URL, SB_KEY, SB_OPTS);
 
 let usuario = null;
+let linhasCrono = {}; // registros carregados, por id
 let safras = [];
 let gerencias = [];
 
@@ -304,26 +308,41 @@ async function renderCronograma() {
   const mesAtualSistema = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`;
   const perfilPodeBaixa = (usuario?.perfil === 'admin' || usuario?.perfil === 'gestor');
 
+  linhasCrono = {};
+  data.forEach(c => { linhasCrono[c.id] = c; });
+
   const html = data.map(c => {
     const mesLinha = String(c.mes || '').substring(0, 7);
     const podeDarBaixaManual = perfilPodeBaixa && mesLinha < mesAtualSistema;
     let statusClass = c.status === 'Realizado' ? 'badge-green' : (c.status === 'Agendado' ? 'badge-blue' : 'badge-yellow');
-    
+
+    const okTec = !!c.evidencia_url;
+    const okLid = !!c.evidencia_lider_url;
+
+    // Etapas (mostradas enquanto não estiver Realizado, ou se houver PDFs)
+    let etapasHtml = '';
+    if (c.status !== 'Realizado' || okTec || okLid) {
+      etapasHtml = `<div class="etapas">
+        <span class="etapa ${okTec ? 'ok' : ''}">${okTec ? '✅' : '⏳'} Técnico</span>
+        <span class="etapa ${okLid ? 'ok' : ''}">${okLid ? '✅' : '⏳'} Líder</span>
+      </div>`;
+    }
+
     // AÇÕES DISPONÍVEIS
     let acoesHtml = '';
-    
+    const btnVerTec = okTec ? `<a href="${c.evidencia_url}" target="_blank" class="btn btn-sm btn-ok">📄 PDF Técnico</a>` : '';
+    const btnVerLid = okLid ? `<a href="${c.evidencia_lider_url}" target="_blank" class="btn btn-sm btn-ok">📄 PDF Líder</a>` : '';
+
     if (c.status !== 'Realizado') {
-      acoesHtml += `<button class="btn btn-secondary btn-sm" onclick="abrirModalAgendar(${c.id}, '${c.data_agendada || ''}', '${c.tecnico_nome || ''}')">📅 Agendar</button>`;
-      
+      acoesHtml += `<button class="btn btn-secondary btn-sm" onclick="abrirModalAgendar(${c.id})">📅 Agendar</button>`;
+      acoesHtml += okTec ? btnVerTec : `<button class="btn btn-primary btn-sm" onclick="abrirModalValidar(${c.id}, 'tecnico')">📎 Checklist Técnico</button>`;
+      acoesHtml += okLid ? btnVerLid : `<button class="btn btn-primary btn-sm" onclick="abrirModalValidar(${c.id}, 'lider')">📎 Checklist Líder</button>`;
       if (podeDarBaixaManual) {
-        acoesHtml += `<button class="btn btn-secondary btn-sm" style="background:#fce8e6; color:#d93025; border-color:#fce8e6;" onclick="darBaixaManual(${c.id}, ${c.gerencia_id}, '${c.mes}')">✅ Baixa Manual (Sem PDF)</button>`;
-      } else {
-        acoesHtml += `<button class="btn btn-primary btn-sm" onclick="abrirModalValidar(${c.id}, '${c.matricula}', '${c.tipo}')">📎 Validar WeCheck</button>`;
+        acoesHtml += `<button class="btn btn-secondary btn-sm" style="background:#fce8e6; color:#d93025; border-color:#fce8e6;" onclick="darBaixaManual(${c.id})">✅ Baixa Manual (Sem PDF)</button>`;
       }
     } else {
-      if (c.evidencia_url) {
-        acoesHtml = `<a href="${c.evidencia_url}" target="_blank" class="btn btn-secondary btn-sm" style="background:#e8f5ee; color:#07583C; border-color:#d0e4d0; text-decoration:none;">📎 Ver PDF Salvo</a>`;
-      } else {
+      acoesHtml = btnVerTec + btnVerLid;
+      if (!okTec && !okLid) {
         acoesHtml = `<span style="font-size: 11px; color: var(--muted); font-style: italic;">${c.tecnico_nome || 'Baixa Retroativa'}</span>`;
       }
     }
@@ -333,7 +352,7 @@ async function renderCronograma() {
         <td><b>${c.lider_nome}</b><br><span style="font-size:11px; color:var(--muted)">Mat: ${c.matricula}</span></td>
         <td>${c.gerencias?.nome} <br><span style="font-size:11px; color:var(--blue)">${c.gerencias?.unidades?.nome}</span></td>
         <td><b>${c.tipo}</b><br><span style="font-size:11px; color:var(--muted)">Mês: ${c.mes || '-'}</span></td>
-        <td><span class="badge ${statusClass}">${c.status}</span></td>
+        <td><span class="badge ${statusClass}">${c.status}</span>${etapasHtml}</td>
         <td>
           <div style="font-size:12px; color:var(--muted)">
             ${c.data_agendada ? '📅 ' + new Date(c.data_agendada + 'T12:00:00').toLocaleDateString('pt-BR') : 'Sem data'}<br>
@@ -397,10 +416,11 @@ async function diagnosticarVazio(safraId, mes, gerId) {
 }
 
 // ── AÇÕES DE AGENDAMENTO E BAIXA MANUAL ──
-function abrirModalAgendar(id, dataAgendada, tecnico) {
+function abrirModalAgendar(id) {
+  const c = linhasCrono[id] || {};
   document.getElementById('agendar-id').value = id;
-  document.getElementById('agendar-data').value = dataAgendada;
-  document.getElementById('agendar-tecnico').value = tecnico;
+  document.getElementById('agendar-data').value = c.data_agendada || '';
+  document.getElementById('agendar-tecnico').value = c.tecnico_nome || nomeOperador() || '';
   document.getElementById('modal-agendar').classList.add('show');
 }
 
@@ -423,7 +443,7 @@ async function salvarAgendamento() {
   }
 }
 
-async function darBaixaManual(id, gerencia_id, mes) {
+async function darBaixaManual(id) {
   if (!confirm("Confirmar a baixa manual deste coaching retroativo sem evidência em PDF?")) return;
   
   const tecnicoResponsavel = 'Baixa Retroativa (' + (nomeOperador() || 'Admin') + ')';
@@ -444,111 +464,222 @@ async function darBaixaManual(id, gerencia_id, mes) {
 }
 
 // ── LEITURA E VALIDAÇÃO DE PDF (WECHECK) ──
-function abrirModalValidar(id, matricula, tipo) {
+// Duas etapas por coaching:
+//   'tecnico' → PDF do checklist de COACHING (preenchido pelo técnico de SSMA); o campo LIDER deve ser a matrícula do cronograma
+//   'lider'   → PDF do checklist que o LÍDER preencheu (Inspeção ou Observação Comportamental); ele deve ser o auditor/observador
+// Quando as duas etapas estiverem validadas, o coaching vira "Realizado".
+
+function normalizarTexto(t) {
+  return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ');
+}
+function analisarPDFWeCheck(textoBruto) {
+  const t = normalizarTexto(textoBruto);
+  const r = { formulario: '', categoria: null, tipo: null, dataFinalizado: null, autor: null,
+              liderMatricula: null, liderNome: null, tecnicoNome: null, tecnicoMatricula: null,
+              executores: [], acompanhadoSSMA: null };
+  const COLAB = 'COLECAO: COLABORADORES NOME: (.+?) CODIGO: (\\d+)';
+
+  const mForm = t.match(/FORMULARIO: (.+?) (?:PONTUACAO DO FORMULARIO|SECAO :|SECAO:)/);
+  r.formulario = mForm ? mForm[1].trim() : (t.split(' INICIADO EM')[0] || '').trim();
+
+  const mFin = t.match(/FINALIZADO EM (\d{2})\/(\d{2})\/(\d{4})/);
+  if (mFin) r.dataFinalizado = `${mFin[3]}-${mFin[2]}-${mFin[1]}`;
+  const mAut = t.match(/AUTOR ([A-Z0-9._%+-]+@[A-Z0-9.-]+)/);
+  if (mAut) r.autor = mAut[1].toLowerCase();
+
+  const f = r.formulario;
+  if (f.includes('COACHING')) {
+    r.categoria = 'coaching';
+    r.tipo = f.includes('INSPECAO') ? 'Inspeção' : (f.includes('OBSERVACAO') ? 'Observação' : null);
+    const mLid = t.match(new RegExp('\\bLIDER ' + COLAB));
+    if (mLid) { r.liderNome = mLid[1].trim(); r.liderMatricula = mLid[2]; }
+    const mTec = t.match(new RegExp('RESPONSAVEL SSMA ' + COLAB));
+    if (mTec) { r.tecnicoNome = mTec[1].trim(); r.tecnicoMatricula = mTec[2]; }
+  } else {
+    r.categoria = 'lider';
+    const mObs = t.match(new RegExp('NOME DO OBSERVADOR ' + COLAB));
+    if (f.includes('OBSERVACAO') || mObs) {
+      r.tipo = 'Observação';
+      if (mObs) r.executores.push({ nome: mObs[1].trim(), matricula: mObs[2] });
+      const mAc = t.match(/ACOMPANHADA PELO SSMA\? (SIM|NAO)/);
+      if (mAc) r.acompanhadoSSMA = mAc[1];
+    } else {
+      r.tipo = 'Inspeção';
+      for (const m of t.matchAll(/MATRICULA - AUDITOR \d+ (\d+)/g)) r.executores.push({ nome: '', matricula: m[1] });
+      for (const m of t.matchAll(new RegExp('AUDITOR - \\d+ ' + COLAB, 'g'))) r.executores.push({ nome: m[1].trim(), matricula: m[2] });
+    }
+  }
+  return r;
+}
+
+function fmtData(iso) {
+  if (!iso) return '-';
+  const [a, m, d] = iso.split('-');
+  return `${d}/${m}/${a}`;
+}
+
+function abrirModalValidar(id, etapa) {
   if (!garantirNomeOperador()) { alert('Informe seu nome para validar o coaching.'); return; }
+  const c = linhasCrono[id];
+  if (!c) return;
+
   document.getElementById('validar-id').value = id;
-  document.getElementById('validar-matricula').value = matricula;
-  document.getElementById('validar-tipo').value = tipo; // 'Inspeção' ou 'Observação'
+  document.getElementById('validar-etapa').value = etapa;
   document.getElementById('validar-arquivo').value = '';
   document.getElementById('validar-status').innerHTML = '';
-  
+  const resumo = document.getElementById('validar-resumo');
+  resumo.style.display = 'none'; resumo.innerHTML = '';
+
+  const tipoTxt = c.tipo === 'Inspeção' ? 'Inspeção' : 'Observação Comportamental';
+  if (etapa === 'tecnico') {
+    document.getElementById('validar-titulo').textContent = '📎 Checklist do Técnico (Coaching)';
+    document.getElementById('validar-instrucao').innerHTML =
+      `Envie o PDF do WeCheck <b>"Coaching de ${tipoTxt}"</b> preenchido pelo técnico de SSMA.<br>
+       O campo <b>Líder</b> precisa ser <b>${c.lider_nome}</b> (matrícula ${c.matricula}).`;
+  } else {
+    document.getElementById('validar-titulo').textContent = '📎 Checklist do Líder';
+    document.getElementById('validar-instrucao').innerHTML =
+      `Envie o PDF do WeCheck de <b>${tipoTxt}</b> que o próprio líder preencheu durante o coaching.<br>
+       <b>${c.lider_nome}</b> (matrícula ${c.matricula}) precisa constar como ${c.tipo === 'Inspeção' ? '<b>Auditor</b>' : '<b>Observador</b>'}.`;
+  }
+
   const btn = document.getElementById('btn-processar-pdf');
   btn.disabled = false;
   btn.textContent = '🔍 Ler e Validar';
-
   document.getElementById('modal-validar').classList.add('show');
 }
 
 // Extrai texto de todas as páginas do PDF
 async function extractTextFromPDF(pdfData) {
-  const loadingTask = pdfjsLib.getDocument({ data: pdfData });
-  const pdf = await loadingTask.promise;
+  const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
   let fullText = '';
-  
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page = await pdf.getPage(pageNum);
     const textContent = await page.getTextContent();
-    const pageText = textContent.items.map(item => item.str).join(' ');
-    fullText += pageText + ' ';
+    fullText += textContent.items.map(item => item.str).join(' ') + ' ';
   }
   return fullText;
 }
 
 async function processarPDFWeCheck() {
-  const fileInput = document.getElementById('validar-arquivo');
-  const file = fileInput.files[0];
-  if (!file) { alert("Por favor, anexe o PDF do WeCheck."); return; }
-  
+  const file = document.getElementById('validar-arquivo').files[0];
+  if (!file) { alert('Por favor, anexe o PDF do WeCheck.'); return; }
+
   const idCrono = document.getElementById('validar-id').value;
-  const matriculaEsperada = document.getElementById('validar-matricula').value.trim();
-  const tipoEsperado = document.getElementById('validar-tipo').value;
+  const etapa = document.getElementById('validar-etapa').value;
+  const c = linhasCrono[idCrono];
   const statusEl = document.getElementById('validar-status');
+  const resumoEl = document.getElementById('validar-resumo');
   const btn = document.getElementById('btn-processar-pdf');
-  
+
+  const falhar = (msg) => {
+    statusEl.innerHTML = `<span style="color:#d93025">❌ ${msg}</span>`;
+    btn.disabled = false;
+    btn.textContent = 'Tentar Novamente';
+  };
+
   btn.disabled = true;
   btn.textContent = 'Lendo PDF...';
-  statusEl.innerHTML = '<span style="color:#c47d0e">⏳ Extraindo texto do arquivo...</span>';
+  statusEl.innerHTML = '<span style="color:#c47d0e">⏳ Lendo o PDF...</span>';
 
   try {
-    const arrayBuffer = await file.arrayBuffer();
-    const textoPDF = await extractTextFromPDF(arrayBuffer);
-    const textoUpper = textoPDF.toUpperCase();
-    
-    console.log("Texto extraído (amostra):", textoUpper.substring(0, 500));
+    const texto = await extractTextFromPDF(await file.arrayBuffer());
+    const info = analisarPDFWeCheck(texto);
+    console.log('PDF analisado:', info);
 
-    // 1. Validar se o arquivo é do tipo "Coaching" e se o subtipo bate
-    const ehCoaching = textoUpper.includes("COACHING");
-    // Flexibilidade na busca da palavra chave
-    const bateTipo = tipoEsperado === 'Inspeção' 
-                     ? (textoUpper.includes("INSPEÇÃO") || textoUpper.includes("INSPECAO"))
-                     : (textoUpper.includes("OBSERVAÇÃO") || textoUpper.includes("OBSERVACAO") || textoUpper.includes("COMPORTAMENTAL"));
+    const matricula = String(c.matricula).trim();
+    const tipoTxt = c.tipo === 'Inspeção' ? 'Inspeção' : 'Observação Comportamental';
 
-    if (!ehCoaching || !bateTipo) {
-      statusEl.innerHTML = `<span style="color:#d93025">❌ O PDF não parece ser um formulário de "Coaching de ${tipoEsperado}".</span>`;
-      btn.disabled = false;
-      btn.textContent = 'Tentar Novamente';
-      return;
+    // Resumo do que foi lido (ajuda a conferir)
+    resumoEl.style.display = 'block';
+    resumoEl.innerHTML = `
+      <b>Formulário:</b> ${info.formulario || '-'}<br>
+      <b>Finalizado em:</b> ${fmtData(info.dataFinalizado)}<br>
+      ${info.categoria === 'coaching'
+        ? `<b>Líder:</b> ${info.liderNome || '-'} (${info.liderMatricula || '-'})<br><b>Técnico SSMA:</b> ${info.tecnicoNome || '-'}`
+        : `<b>${info.tipo === 'Inspeção' ? 'Auditor(es)' : 'Observador'}:</b> ${[...new Set(info.executores.map(e => (e.nome ? e.nome + ' ' : '') + '(' + e.matricula + ')'))].join(', ') || '-'}`}`;
+
+    const update = {};
+    let avisos = [];
+
+    if (etapa === 'tecnico') {
+      if (info.categoria !== 'coaching') return falhar(`Este PDF não é um checklist de Coaching. Use aqui o "Coaching de ${tipoTxt}" do técnico. O checklist do líder vai no outro botão.`);
+      if (info.tipo !== c.tipo) return falhar(`Este PDF é um Coaching de ${info.tipo || '?'}, mas este registro é de ${c.tipo}.`);
+      if (!info.liderMatricula) return falhar('Não encontrei o campo "Líder" no PDF.');
+      if (info.liderMatricula !== matricula) return falhar(`O líder do PDF é ${info.liderNome} (${info.liderMatricula}), mas o cronograma é de ${c.lider_nome} (${matricula}).`);
+
+      if (c.data_lider && info.dataFinalizado && c.data_lider !== info.dataFinalizado) {
+        avisos.push(`A data do coaching (${fmtData(info.dataFinalizado)}) é diferente da data do checklist do líder (${fmtData(c.data_lider)}).`);
+      }
+      update.evidencia_url = null; // preenchido após upload
+      update.data_coaching = info.dataFinalizado;
+      update.tecnico_nome = info.tecnicoNome || nomeOperador() || 'Técnico SSMA';
+    } else {
+      if (info.categoria === 'coaching') return falhar('Este PDF é o checklist de Coaching do técnico. Aqui vai o checklist que o próprio líder preencheu.');
+      if (info.tipo !== c.tipo) return falhar(`Este PDF é de ${info.tipo || 'tipo desconhecido'}, mas este registro é de ${c.tipo}.`);
+      const achou = info.executores.some(e => e.matricula === matricula);
+      if (!achou) {
+        const quem = [...new Set(info.executores.map(e => e.matricula))].join(', ') || 'nenhum';
+        return falhar(`${c.lider_nome} (${matricula}) não aparece como ${c.tipo === 'Inspeção' ? 'auditor' : 'observador'} neste PDF (encontrado: ${quem}).`);
+      }
+      if (c.tipo === 'Observação' && info.acompanhadoSSMA === 'NAO') {
+        avisos.push('No checklist do líder, a pergunta "Essa observação foi acompanhada pelo SSMA?" está marcada como NÃO.');
+      }
+      if (c.data_coaching && info.dataFinalizado && c.data_coaching !== info.dataFinalizado) {
+        avisos.push(`A data deste checklist (${fmtData(info.dataFinalizado)}) é diferente da data do coaching (${fmtData(c.data_coaching)}).`);
+      }
+      update.evidencia_lider_url = null;
+      update.data_lider = info.dataFinalizado;
     }
 
-    // 2. Validar a Matrícula
-    if (!textoUpper.includes(matriculaEsperada)) {
-      statusEl.innerHTML = `<span style="color:#d93025">❌ A Matrícula ${matriculaEsperada} não foi encontrada neste PDF. Verifique o arquivo correto.</span>`;
-      btn.disabled = false;
-      btn.textContent = 'Tentar Novamente';
-      return;
+    if (avisos.length) {
+      statusEl.innerHTML = `<span style="color:#c47d0e">⚠️ ${avisos.join('<br>⚠️ ')}</span>`;
+      if (!confirm('Atenção:\n\n- ' + avisos.join('\n- ') + '\n\nDeseja validar mesmo assim?')) {
+        btn.disabled = false; btn.textContent = '🔍 Ler e Validar';
+        return;
+      }
     }
 
-    // Se chegou aqui, as validações básicas passaram.
-    statusEl.innerHTML = '<span style="color:#07583C">✅ Leitura validada! Fazendo upload e salvando...</span>';
+    statusEl.innerHTML = '<span style="color:#07583C">✅ PDF conferido! Enviando arquivo...</span>';
 
-    // 3. Fazer Upload do PDF para o Supabase Storage
-    const mes = document.getElementById('filtro-mes').value || 'sem-mes';
-    const nomeArquivoLimpo = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-    const path = `coaching/${mes}/${idCrono}_${Date.now()}_${nomeArquivoLimpo}`;
-    
+    // Upload do PDF
+    const mesPasta = (info.dataFinalizado || '').substring(0, 7) || c.mes || 'sem-mes';
+    const nomeArquivoLimpo = file.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9.\-_]/g, '_');
+    const path = `coaching/${mesPasta}/${idCrono}_${etapa}_${Date.now()}_${nomeArquivoLimpo}`;
     const { error: upError } = await sb.storage.from('evidencias').upload(path, file);
     if (upError) throw upError;
-
     const { data: pubUrl } = sb.storage.from('evidencias').getPublicUrl(path);
 
-    // 4. Atualizar registro no banco
-    const { error: dbError } = await sb.from('cronograma_coaching').update({
-      status: 'Realizado',
-      evidencia_url: pubUrl.publicUrl,
-      tecnico_nome: 'Validado Via WeCheck (' + (nomeOperador() || 'Técnico SSMA') + ')'
-    }).eq('id', idCrono);
+    if (etapa === 'tecnico') update.evidencia_url = pubUrl.publicUrl;
+    else update.evidencia_lider_url = pubUrl.publicUrl;
 
+    // As duas etapas completas → Realizado (mês do realizado = mês do coaching)
+    const tecOk = etapa === 'tecnico' ? true : !!c.evidencia_url;
+    const lidOk = etapa === 'lider' ? true : !!c.evidencia_lider_url;
+    const concluiu = tecOk && lidOk;
+    if (concluiu) {
+      const dataRef = update.data_coaching || c.data_coaching || update.data_lider || c.data_lider;
+      update.status = 'Realizado';
+      if (dataRef) {
+        update.data_agendada = dataRef;
+        update.mes = dataRef.substring(0, 7);
+      }
+    } else if (c.status === 'Pendente') {
+      update.status = 'Agendado';
+    }
+
+    const { error: dbError } = await sb.from('cronograma_coaching').update(update).eq('id', idCrono);
     if (dbError) throw dbError;
 
-    alert("✅ Coaching validado e baixado com sucesso!");
+    alert(concluiu
+      ? '✅ Checklists do técnico e do líder validados. Coaching REALIZADO!'
+      : `✅ Checklist do ${etapa === 'tecnico' ? 'técnico' : 'líder'} validado. Falta o checklist do ${etapa === 'tecnico' ? 'líder' : 'técnico'} para concluir.`);
     fecharModal('modal-validar');
     renderCronograma();
 
   } catch (err) {
     console.error(err);
-    statusEl.innerHTML = `<span style="color:#d93025">❌ Erro no processamento: ${err.message}</span>`;
-    btn.disabled = false;
-    btn.textContent = 'Tentar Novamente';
+    falhar('Erro no processamento: ' + err.message);
   }
 }
 

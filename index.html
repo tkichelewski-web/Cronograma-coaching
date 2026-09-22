@@ -79,7 +79,7 @@ tr:hover td{background:var(--surface2);}
   </div>
   <div class="user-info">
     <span>Olá, <strong id="user-nome">Carregando...</strong></span>
-    <button class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="sair()">Voltar ao Sistema IP</button>
+    <button class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="sair()">Ir para o Sistema IP</button>
   </div>
 </header>
 
@@ -92,7 +92,10 @@ tr:hover td{background:var(--surface2);}
     </div>
     <div>
       <label>Mês</label>
-      <input type="month" id="filtro-mes" onchange="renderCronograma()">
+      <div style="display:flex; gap:6px;">
+        <input type="month" id="filtro-mes" onchange="renderCronograma()">
+        <button class="btn btn-secondary btn-sm" type="button" onclick="document.getElementById('filtro-mes').value=''; renderCronograma();">Safra toda</button>
+      </div>
     </div>
     <div>
       <label>Gerência</label>
@@ -175,18 +178,21 @@ let usuario = null;
 let safras = [];
 let gerencias = [];
 
-// ── INIT ──
+// ── INIT (sem login obrigatório) ──
+// Se houver sessão da matriz no mesmo navegador, usa o perfil dela (libera Baixa Manual para admin/gestor).
+// Se não houver, o cronograma funciona em modo livre para os técnicos.
 async function init() {
-  const { data:{ session } } = await sb.auth.getSession();
-  if (!session) {
-    alert("Você precisa fazer login no Sistema IP primeiro.");
-    window.location.href = 'index.html'; // ajuste para a URL da sua matriz
-    return;
+  try {
+    const { data:{ session } } = await sb.auth.getSession();
+    if (session) {
+      const { data: userData } = await sb.from('usuarios').select('*, gerencias(nome)').eq('auth_id', session.user.id).single();
+      usuario = userData || null;
+    }
+  } catch (e) {
+    console.warn('Sem sessão, seguindo em modo livre.', e);
+    usuario = null;
   }
-  
-  const { data: userData } = await sb.from('usuarios').select('*, gerencias(nome)').eq('auth_id', session.user.id).single();
-  usuario = userData;
-  document.getElementById('user-nome').textContent = usuario?.nome || 'Usuário';
+  atualizarNomeCabecalho();
 
   // Configura Mês Atual por padrão
   const agora = new Date();
@@ -194,6 +200,44 @@ async function init() {
 
   await carregarFiltros();
   renderCronograma();
+}
+
+// Nome de quem está operando: do login (se houver) ou digitado pelo técnico
+function nomeOperador() {
+  if (usuario?.nome) return usuario.nome;
+  let n = '';
+  try { n = localStorage.getItem('crono-tecnico') || ''; } catch (e) {}
+  return n;
+}
+
+function atualizarNomeCabecalho() {
+  const el = document.getElementById('user-nome');
+  if (usuario?.nome) {
+    el.textContent = usuario.nome;
+    el.style.cursor = 'default';
+    el.onclick = null;
+  } else {
+    el.textContent = nomeOperador() || 'Técnico (clique para informar seu nome)';
+    el.style.cursor = 'pointer';
+    el.title = 'Clique para alterar seu nome';
+    el.onclick = definirNomeOperador;
+  }
+}
+
+function definirNomeOperador() {
+  const atual = nomeOperador();
+  const n = prompt('Informe seu nome (fica registrado nos agendamentos e validações):', atual);
+  if (n === null) return atual;
+  const limpo = n.trim();
+  try { localStorage.setItem('crono-tecnico', limpo); } catch (e) {}
+  atualizarNomeCabecalho();
+  return limpo;
+}
+
+function garantirNomeOperador() {
+  let n = nomeOperador();
+  if (!n) n = definirNomeOperador();
+  return n;
 }
 
 async function carregarFiltros() {
@@ -211,7 +255,7 @@ async function carregarFiltros() {
     gerencias.map(ger => `<option value="${ger.id}">${ger.nome} (${ger.unidades?.nome || ''})</option>`).join('');
 
   // Se o usuário for perfil "Gerência", trava no filtro dele
-  if (usuario.perfil === 'gerencia' && usuario.gerencia_id) {
+  if (usuario?.perfil === 'gerencia' && usuario?.gerencia_id) {
     gerEl.value = usuario.gerencia_id;
     gerEl.disabled = true;
   }
@@ -223,34 +267,46 @@ async function renderCronograma() {
   const mes = document.getElementById('filtro-mes')?.value;
   const gerId = document.getElementById('filtro-gerencia')?.value;
 
-  if (!safraId || !mes) {
-    document.getElementById('crono-lista').innerHTML = '<div class="alert alert-info" style="padding:15px">Selecione a Safra e o Mês para ver o cronograma.</div>';
+  if (!safraId) {
+    document.getElementById('crono-lista').innerHTML = '<div class="alert alert-info" style="padding:15px">Selecione a Safra para ver o cronograma. Deixe o mês em branco para ver a safra toda.</div>';
     return;
   }
 
   document.getElementById('crono-lista').innerHTML = '<div class="loading">A carregar os dados...</div>';
 
   let q = sb.from('cronograma_coaching').select('*, gerencias(nome, unidades(nome))')
-    .eq('safra_id', safraId).eq('mes', mes).order('lider_nome');
+    .eq('safra_id', safraId).order('mes').order('lider_nome');
+  if (mes) q = q.eq('mes', mes);
   
   if (gerId) q = q.eq('gerencia_id', gerId);
 
   const { data, error } = await q;
 
-  if (error || !data || data.length === 0) {
-    document.getElementById('crono-lista').innerHTML = '<div style="padding:20px; color:var(--muted); text-align:center;">Nenhum coaching registado para este período.</div>';
+  // Erro real da consulta (RLS, coluna, relacionamento, tipo de dado...)
+  if (error) {
+    console.error('Erro cronograma:', error);
+    document.getElementById('crono-lista').innerHTML = `
+      <div style="padding:20px; color:#d93025; font-size:13px; line-height:1.5;">
+        ❌ <b>Erro na consulta:</b> ${error.message}<br>
+        <small>${error.details || ''} ${error.hint || ''} ${error.code ? '(código ' + error.code + ')' : ''}</small>
+      </div>`;
     return;
   }
 
-  // Lógica para Baixa Manual Retroativa
+  // Nada encontrado: diagnóstico automático
+  if (!data || data.length === 0) {
+    await diagnosticarVazio(safraId, mes, gerId);
+    return;
+  }
+
+  // Lógica para Baixa Manual Retroativa (avaliada por linha)
   const agora = new Date();
   const mesAtualSistema = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`;
-  
-  // Retroativo se o mês filtrado for menor que o mês atual
-  const isRetroativo = mes < mesAtualSistema;
-  const podeDarBaixaManual = isRetroativo && (usuario.perfil === 'admin' || usuario.perfil === 'gestor');
+  const perfilPodeBaixa = (usuario?.perfil === 'admin' || usuario?.perfil === 'gestor');
 
   const html = data.map(c => {
+    const mesLinha = String(c.mes || '').substring(0, 7);
+    const podeDarBaixaManual = perfilPodeBaixa && mesLinha < mesAtualSistema;
     let statusClass = c.status === 'Realizado' ? 'badge-green' : (c.status === 'Agendado' ? 'badge-blue' : 'badge-yellow');
     
     // AÇÕES DISPONÍVEIS
@@ -276,7 +332,7 @@ async function renderCronograma() {
       <tr>
         <td><b>${c.lider_nome}</b><br><span style="font-size:11px; color:var(--muted)">Mat: ${c.matricula}</span></td>
         <td>${c.gerencias?.nome} <br><span style="font-size:11px; color:var(--blue)">${c.gerencias?.unidades?.nome}</span></td>
-        <td><b>${c.tipo}</b></td>
+        <td><b>${c.tipo}</b><br><span style="font-size:11px; color:var(--muted)">Mês: ${c.mes || '-'}</span></td>
         <td><span class="badge ${statusClass}">${c.status}</span></td>
         <td>
           <div style="font-size:12px; color:var(--muted)">
@@ -306,6 +362,38 @@ async function renderCronograma() {
       <tbody>${html}</tbody>
     </table>
   `;
+}
+
+// ── DIAGNÓSTICO QUANDO A LISTA VEM VAZIA ──
+async function diagnosticarVazio(safraId, mes, gerId) {
+  const el = document.getElementById('crono-lista');
+  el.innerHTML = '<div class="loading">Nenhum registro no filtro. Verificando o motivo...</div>';
+
+  // 1) O front consegue ler QUALQUER linha da tabela? (sem filtros)
+  const { data: amostra, count, error } = await sb.from('cronograma_coaching')
+    .select('safra_id, mes, status', { count: 'exact' }).limit(500);
+
+  let msg = `<b>Filtro usado:</b> safra_id = ${safraId}, mês = ${mes || '(todos)'}${gerId ? ', gerência = ' + gerId : ''}<br><br>`;
+
+  if (error) {
+    msg += `❌ Erro ao ler a tabela: ${error.message}`;
+  } else if (!count) {
+    msg += `⚠️ <b>O sistema não enxerga nenhuma linha em cronograma_coaching.</b><br>
+      • Se no SQL Editor do Supabase a tabela TEM linhas → é o RLS (falta política de SELECT liberando o acesso sem login, papel "anon").<br>
+      • Se no SQL Editor a tabela também está vazia → os planejados nunca foram inseridos (o script de baixa retroativa atualizou uma tabela vazia).`;
+  } else {
+    const safrasEnc = [...new Set(amostra.map(r => r.safra_id))].join(', ');
+    const mesesEnc = [...new Set(amostra.map(r => String(r.mes)))].sort().join(', ');
+    const porStatus = amostra.reduce((a, r) => (a[r.status] = (a[r.status] || 0) + 1, a), {});
+    const safraOk = amostra.some(r => String(r.safra_id) === String(safraId));
+    msg += `✅ O sistema enxerga <b>${count}</b> linha(s) na tabela.<br>
+      • Status: ${Object.entries(porStatus).map(([k, v]) => k + ' = ' + v).join(' | ')}<br>
+      • safra_id gravados: <b>${safrasEnc}</b> ${safraOk ? '' : '<span style="color:#d93025">← nenhum é igual à safra selecionada</span>'}<br>
+      • Valores de "mes" gravados: <b>${mesesEnc}</b><br>
+      <small>O filtro de mês envia no formato "AAAA-MM" (ex.: 2026-09). Se os valores acima estiverem em outro formato, o filtro não encontra nada.</small>`;
+  }
+
+  el.innerHTML = `<div style="padding:20px; font-size:13px; line-height:1.6; color:var(--text, #333);">${msg}</div>`;
 }
 
 // ── AÇÕES DE AGENDAMENTO E BAIXA MANUAL ──
@@ -338,7 +426,7 @@ async function salvarAgendamento() {
 async function darBaixaManual(id, gerencia_id, mes) {
   if (!confirm("Confirmar a baixa manual deste coaching retroativo sem evidência em PDF?")) return;
   
-  const tecnicoResponsavel = 'Baixa Retroativa (' + (usuario?.nome || 'Admin') + ')';
+  const tecnicoResponsavel = 'Baixa Retroativa (' + (nomeOperador() || 'Admin') + ')';
 
   const { error } = await sb.from('cronograma_coaching').update({ 
     status: 'Realizado',
@@ -357,6 +445,7 @@ async function darBaixaManual(id, gerencia_id, mes) {
 
 // ── LEITURA E VALIDAÇÃO DE PDF (WECHECK) ──
 function abrirModalValidar(id, matricula, tipo) {
+  if (!garantirNomeOperador()) { alert('Informe seu nome para validar o coaching.'); return; }
   document.getElementById('validar-id').value = id;
   document.getElementById('validar-matricula').value = matricula;
   document.getElementById('validar-tipo').value = tipo; // 'Inspeção' ou 'Observação'
@@ -433,7 +522,7 @@ async function processarPDFWeCheck() {
     statusEl.innerHTML = '<span style="color:#07583C">✅ Leitura validada! Fazendo upload e salvando...</span>';
 
     // 3. Fazer Upload do PDF para o Supabase Storage
-    const mes = document.getElementById('filtro-mes').value;
+    const mes = document.getElementById('filtro-mes').value || 'sem-mes';
     const nomeArquivoLimpo = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
     const path = `coaching/${mes}/${idCrono}_${Date.now()}_${nomeArquivoLimpo}`;
     
@@ -446,7 +535,7 @@ async function processarPDFWeCheck() {
     const { error: dbError } = await sb.from('cronograma_coaching').update({
       status: 'Realizado',
       evidencia_url: pubUrl.publicUrl,
-      tecnico_nome: 'Validado Via WeCheck (' + usuario.nome + ')'
+      tecnico_nome: 'Validado Via WeCheck (' + (nomeOperador() || 'Técnico SSMA') + ')'
     }).eq('id', idCrono);
 
     if (dbError) throw dbError;

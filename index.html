@@ -72,6 +72,17 @@ tr:hover td{background:var(--surface2);}
 .etapa.ok{background:var(--green-dim);color:#07583C;border-color:#b7dcc6;font-weight:700;}
 .btn-ok{background:#e8f5ee;color:#07583C;border:1px solid #d0e4d0;text-decoration:none;}
 .resumo-pdf{font-size:12px;line-height:1.6;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;display:none;}
+.badge-red{background:var(--red-dim);color:var(--red);}
+.badge-gray{background:#eceff1;color:#78909c;}
+.badge-orange{background:#fff1e0;color:#b76e00;}
+tr.inativo td{opacity:.55;}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.resumo{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+.resumo .card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 16px;min-width:130px;}
+.resumo .card .n{font-size:22px;font-weight:800;color:#07583C;line-height:1.1;}
+.resumo .card .l{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;}
+.resumo .card.alerta .n{color:var(--red);}
+.info-sem{font-size:12px;color:var(--muted);margin-bottom:12px;}
 .loading{text-align:center;padding:36px;color:var(--muted);font-size:14px;}
 </style>
 </head>
@@ -96,11 +107,18 @@ tr:hover td{background:var(--surface2);}
       <select id="filtro-safra" onchange="renderCronograma()"><option value="">Carregando...</option></select>
     </div>
     <div>
-      <label>Mês</label>
-      <div style="display:flex; gap:6px;">
-        <input type="month" id="filtro-mes" onchange="renderCronograma()">
-        <button class="btn btn-secondary btn-sm" type="button" onclick="document.getElementById('filtro-mes').value=''; renderCronograma();">Safra toda</button>
-      </div>
+      <label>Semestre</label>
+      <select id="filtro-semestre" onchange="renderCronograma()" style="min-width:150px">
+        <option value="S1">1º Sem (abr–set)</option>
+        <option value="S2">2º Sem (out–mar)</option>
+        <option value="">Safra toda</option>
+      </select>
+    </div>
+    <div>
+      <label>Diretoria</label>
+      <select id="filtro-diretoria" onchange="montarFiltroGerencia(); renderCronograma()">
+        <option value="">Todas as Diretorias</option>
+      </select>
     </div>
     <div>
       <label>Gerência</label>
@@ -108,10 +126,28 @@ tr:hover td{background:var(--surface2);}
         <option value="">Todas as Gerências</option>
       </select>
     </div>
-    <div style="flex:1; text-align:right;">
-      <button class="btn btn-secondary" onclick="renderCronograma()">🔄 Atualizar</button>
+    <div>
+      <label>Mês do realizado</label>
+      <div style="display:flex; gap:6px;">
+        <input type="month" id="filtro-mes" onchange="renderCronograma()" style="min-width:150px">
+        <button class="btn btn-secondary btn-sm" type="button" onclick="document.getElementById('filtro-mes').value=''; renderCronograma();">Todos</button>
+      </div>
     </div>
   </div>
+
+  <div class="form-row" style="justify-content:space-between; margin-top:-8px;">
+    <div class="toolbar">
+      <button class="btn btn-primary" onclick="abrirModalLider()">＋ Adicionar líder</button>
+      <button class="btn btn-secondary" onclick="abrirSegundoSemestre()">📂 Abrir 2º semestre</button>
+      <label style="display:flex;align-items:center;gap:6px;margin:0;text-transform:none;letter-spacing:0;font-size:12px;">
+        <input type="checkbox" id="filtro-inativos" onchange="renderCronograma()" style="min-width:0"> Mostrar inativos
+      </label>
+    </div>
+    <button class="btn btn-secondary" onclick="renderCronograma()">🔄 Atualizar</button>
+  </div>
+
+  <div class="info-sem" id="info-semestre"></div>
+  <div class="resumo" id="resumo-cards"></div>
 
   <!-- TABELA DE CRONOGRAMA -->
   <div class="table-wrap">
@@ -140,6 +176,37 @@ tr:hover td{background:var(--surface2);}
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="fecharModal('modal-agendar')">Cancelar</button>
       <button class="btn btn-primary" onclick="salvarAgendamento()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ADICIONAR LÍDER -->
+<div class="modal-overlay" id="modal-lider">
+  <div class="modal">
+    <div class="modal-title">＋ Adicionar líder ao cronograma</div>
+    <div style="font-size:12px; color:var(--muted); margin-bottom:14px; line-height:1.5;">
+      Cria os coachings pendentes do líder no semestre escolhido, com prazo no fim do semestre.
+    </div>
+    <div style="display:flex; gap:10px; margin-bottom:12px;">
+      <div style="flex:1"><label>Matrícula</label><input type="text" id="lider-matricula" style="width:100%;min-width:0" inputmode="numeric"></div>
+      <div style="flex:1"><label>Semestre</label>
+        <select id="lider-semestre" style="width:100%;min-width:0">
+          <option value="S1">1º Sem (abr–set)</option>
+          <option value="S2">2º Sem (out–mar)</option>
+        </select>
+      </div>
+    </div>
+    <div style="margin-bottom:12px;"><label>Nome do líder</label><input type="text" id="lider-nome" style="width:100%"></div>
+    <div style="margin-bottom:12px;"><label>Gerência</label><select id="lider-gerencia" style="width:100%"></select></div>
+    <div style="margin-bottom:6px;"><label>Coachings</label>
+      <label style="display:inline-flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text);margin-right:16px;">
+        <input type="checkbox" id="lider-insp" checked style="min-width:0"> Inspeção</label>
+      <label style="display:inline-flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text);">
+        <input type="checkbox" id="lider-obs" checked style="min-width:0"> Observação</label>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="fecharModal('modal-lider')">Cancelar</button>
+      <button class="btn btn-primary" id="btn-salvar-lider" onclick="salvarLider()">Adicionar</button>
     </div>
   </div>
 </div>
@@ -181,6 +248,7 @@ let usuario = null;
 let linhasCrono = {}; // registros carregados, por id
 let safras = [];
 let gerencias = [];
+let diretorias = [];
 
 // ── INIT (sem login obrigatório) ──
 // Se houver sessão da matriz no mesmo navegador, usa o perfil dela (libera Baixa Manual para admin/gestor).
@@ -198,9 +266,10 @@ async function init() {
   }
   atualizarNomeCabecalho();
 
-  // Configura Mês Atual por padrão
-  const agora = new Date();
-  document.getElementById('filtro-mes').value = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`;
+  // Semestre atual por padrão (abr–set = S1, out–mar = S2); mês do realizado em branco
+  const mAtual = new Date().getMonth() + 1;
+  document.getElementById('filtro-semestre').value = (mAtual >= 4 && mAtual <= 9) ? 'S1' : 'S2';
+  document.getElementById('filtro-mes').value = '';
 
   await carregarFiltros();
   renderCronograma();
@@ -245,24 +314,81 @@ function garantirNomeOperador() {
 }
 
 async function carregarFiltros() {
-  // Safras
+  // Safras (seleciona a safra vigente)
   const { data: s } = await sb.from('safras').select('*').order('ano_ini', { ascending: false });
   safras = s || [];
   const sfEl = document.getElementById('filtro-safra');
   sfEl.innerHTML = safras.map(saf => `<option value="${saf.id}">${saf.nome}</option>`).join('');
-  
-  // Gerências
-  const { data: g } = await sb.from('gerencias').select('id, nome, unidades(nome)').eq('ativo', true).order('nome');
-  gerencias = g || [];
-  const gerEl = document.getElementById('filtro-gerencia');
-  gerEl.innerHTML = '<option value="">Todas as Gerências</option>' + 
+  const hoje = new Date();
+  const anoIniVigente = (hoje.getMonth() + 1) >= 4 ? hoje.getFullYear() : hoje.getFullYear() - 1;
+  const vigente = safras.find(x => Number(x.ano_ini) === anoIniVigente);
+  if (vigente) sfEl.value = vigente.id;
+
+  // Gerências (com diretoria, se a relação existir)
+  let resp = await sb.from('gerencias').select('*, unidades(nome), diretorias(nome)').eq('ativo', true).order('nome');
+  if (resp.error) resp = await sb.from('gerencias').select('*, unidades(nome)').eq('ativo', true).order('nome');
+  gerencias = resp.data || [];
+
+  // Diretorias
+  const { data: d } = await sb.from('diretorias').select('*').order('nome');
+  diretorias = (d || []).filter(dir => gerencias.some(g => String(g.diretoria_id) === String(dir.id)));
+  const dirEl = document.getElementById('filtro-diretoria');
+  dirEl.innerHTML = '<option value="">Todas as Diretorias</option>' +
+    diretorias.map(dir => `<option value="${dir.id}">${dir.nome}</option>`).join('');
+  if (!diretorias.length) dirEl.disabled = true;
+
+  montarFiltroGerencia();
+
+  // Select de gerência do modal "Adicionar líder"
+  document.getElementById('lider-gerencia').innerHTML = '<option value="">Selecione...</option>' +
     gerencias.map(ger => `<option value="${ger.id}">${ger.nome} (${ger.unidades?.nome || ''})</option>`).join('');
 
   // Se o usuário for perfil "Gerência", trava no filtro dele
   if (usuario?.perfil === 'gerencia' && usuario?.gerencia_id) {
+    const gerEl = document.getElementById('filtro-gerencia');
     gerEl.value = usuario.gerencia_id;
     gerEl.disabled = true;
+    dirEl.disabled = true;
   }
+}
+
+// Monta o filtro de gerência conforme a diretoria escolhida
+function montarFiltroGerencia() {
+  const dirId = document.getElementById('filtro-diretoria').value;
+  const gerEl = document.getElementById('filtro-gerencia');
+  const atual = gerEl.value;
+  const lista = dirId ? gerencias.filter(g => String(g.diretoria_id) === String(dirId)) : gerencias;
+  gerEl.innerHTML = '<option value="">Todas as Gerências</option>' +
+    lista.map(ger => `<option value="${ger.id}">${ger.nome} (${ger.unidades?.nome || ''})</option>`).join('');
+  if (lista.some(g => String(g.id) === String(atual))) gerEl.value = atual;
+}
+
+// ── SEMESTRES ──
+// S1 = abril a setembro do ano inicial da safra | S2 = outubro a março do ano seguinte
+function infoSemestre(safraId, sem) {
+  const saf = safras.find(x => String(x.id) === String(safraId));
+  const a = Number(saf?.ano_ini) || new Date().getFullYear();
+  if (sem === 'S2') return { inicio: `${a}-10-01`, fim: `${a + 1}-03-31`, mesFim: `${a + 1}-03`, rotulo: `2º semestre (out/${a} a mar/${a + 1})` };
+  return { inicio: `${a}-04-01`, fim: `${a}-09-30`, mesFim: `${a}-09`, rotulo: `1º semestre (abr a set/${a})` };
+}
+
+function hojeISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Situação exibida (calculada, não gravada): Atrasado / Realizado com atraso / Inativo
+function situacao(c) {
+  if (c.status === 'Inativo') return { txt: 'Inativo', cls: 'badge-gray' };
+  const prazo = infoSemestre(c.safra_id, c.semestre || 'S1').fim;
+  if (c.status === 'Realizado') {
+    const dt = c.data_coaching || c.data_agendada;
+    if (dt && dt > prazo) return { txt: 'Realizado c/ atraso', cls: 'badge-orange' };
+    return { txt: 'Realizado', cls: 'badge-green' };
+  }
+  if (hojeISO() > prazo) return { txt: 'Atrasado', cls: 'badge-red' };
+  if (c.status === 'Agendado') return { txt: 'Agendado', cls: 'badge-blue' };
+  return { txt: 'Pendente', cls: 'badge-yellow' };
 }
 
 // ── RENDERIZAÇÃO DA TABELA ──
@@ -278,11 +404,28 @@ async function renderCronograma() {
 
   document.getElementById('crono-lista').innerHTML = '<div class="loading">A carregar os dados...</div>';
 
+  const sem = document.getElementById('filtro-semestre')?.value;
+  const dirId = document.getElementById('filtro-diretoria')?.value;
+  const verInativos = document.getElementById('filtro-inativos')?.checked;
+
+  // Cabeçalho do semestre
+  const infoEl = document.getElementById('info-semestre');
+  if (sem) {
+    const inf = infoSemestre(safraId, sem);
+    infoEl.innerHTML = `📆 <b>${inf.rotulo}</b> — prazo final ${fmtData(inf.fim)}. A pontuação no IP é apurada no fechamento do semestre.`;
+  } else infoEl.innerHTML = '';
+
   let q = sb.from('cronograma_coaching').select('*, gerencias(nome, unidades(nome))')
-    .eq('safra_id', safraId).order('mes').order('lider_nome');
+    .eq('safra_id', safraId).order('lider_nome').order('tipo');
+  if (sem) q = q.eq('semestre', sem);
   if (mes) q = q.eq('mes', mes);
-  
+  if (!verInativos) q = q.neq('status', 'Inativo');
+
   if (gerId) q = q.eq('gerencia_id', gerId);
+  else if (dirId) {
+    const ids = gerencias.filter(g => String(g.diretoria_id) === String(dirId)).map(g => g.id);
+    q = q.in('gerencia_id', ids.length ? ids : [-1]);
+  }
 
   const { data, error } = await q;
 
@@ -299,6 +442,7 @@ async function renderCronograma() {
 
   // Nada encontrado: diagnóstico automático
   if (!data || data.length === 0) {
+    document.getElementById('resumo-cards').innerHTML = '';
     await diagnosticarVazio(safraId, mes, gerId);
     return;
   }
@@ -310,18 +454,19 @@ async function renderCronograma() {
 
   linhasCrono = {};
   data.forEach(c => { linhasCrono[c.id] = c; });
+  renderResumo(data);
 
   const html = data.map(c => {
     const mesLinha = String(c.mes || '').substring(0, 7);
     const podeDarBaixaManual = perfilPodeBaixa && mesLinha < mesAtualSistema;
-    let statusClass = c.status === 'Realizado' ? 'badge-green' : (c.status === 'Agendado' ? 'badge-blue' : 'badge-yellow');
+    const sit = situacao(c);
 
     const okTec = !!c.evidencia_url;
     const okLid = !!c.evidencia_lider_url;
 
     // Etapas (mostradas enquanto não estiver Realizado, ou se houver PDFs)
     let etapasHtml = '';
-    if (c.status !== 'Realizado' || okTec || okLid) {
+    if ((c.status !== 'Realizado' && c.status !== 'Inativo') || okTec || okLid) {
       etapasHtml = `<div class="etapas">
         <span class="etapa ${okTec ? 'ok' : ''}">${okTec ? '✅' : '⏳'} Técnico</span>
         <span class="etapa ${okLid ? 'ok' : ''}">${okLid ? '✅' : '⏳'} Líder</span>
@@ -333,13 +478,16 @@ async function renderCronograma() {
     const btnVerTec = okTec ? `<a href="${c.evidencia_url}" target="_blank" class="btn btn-sm btn-ok">📄 PDF Técnico</a>` : '';
     const btnVerLid = okLid ? `<a href="${c.evidencia_lider_url}" target="_blank" class="btn btn-sm btn-ok">📄 PDF Líder</a>` : '';
 
-    if (c.status !== 'Realizado') {
+    if (c.status === 'Inativo') {
+      acoesHtml = `<button class="btn btn-secondary btn-sm" onclick="reativarLider(${c.id})">↩️ Reativar</button>`;
+    } else if (c.status !== 'Realizado') {
       acoesHtml += `<button class="btn btn-secondary btn-sm" onclick="abrirModalAgendar(${c.id})">📅 Agendar</button>`;
       acoesHtml += okTec ? btnVerTec : `<button class="btn btn-primary btn-sm" onclick="abrirModalValidar(${c.id}, 'tecnico')">📎 Checklist Técnico</button>`;
       acoesHtml += okLid ? btnVerLid : `<button class="btn btn-primary btn-sm" onclick="abrirModalValidar(${c.id}, 'lider')">📎 Checklist Líder</button>`;
       if (podeDarBaixaManual) {
         acoesHtml += `<button class="btn btn-secondary btn-sm" style="background:#fce8e6; color:#d93025; border-color:#fce8e6;" onclick="darBaixaManual(${c.id})">✅ Baixa Manual (Sem PDF)</button>`;
       }
+      acoesHtml += `<button class="btn btn-danger btn-sm" title="Líder saiu da empresa ou deixou de ser líder" onclick="removerLider(${c.id})">🚫 Remover</button>`;
     } else {
       acoesHtml = btnVerTec + btnVerLid;
       if (!okTec && !okLid) {
@@ -348,11 +496,11 @@ async function renderCronograma() {
     }
 
     return `
-      <tr>
+      <tr class="${c.status === 'Inativo' ? 'inativo' : ''}">
         <td><b>${c.lider_nome}</b><br><span style="font-size:11px; color:var(--muted)">Mat: ${c.matricula}</span></td>
         <td>${c.gerencias?.nome} <br><span style="font-size:11px; color:var(--blue)">${c.gerencias?.unidades?.nome}</span></td>
-        <td><b>${c.tipo}</b><br><span style="font-size:11px; color:var(--muted)">Mês: ${c.mes || '-'}</span></td>
-        <td><span class="badge ${statusClass}">${c.status}</span>${etapasHtml}</td>
+        <td><b>${c.tipo}</b><br><span style="font-size:11px; color:var(--muted)">${c.semestre || 'S1'} · ${c.status === 'Realizado' ? 'Realizado em ' + (c.mes || '-') : 'Prazo ' + fmtData(infoSemestre(c.safra_id, c.semestre || 'S1').fim)}</span></td>
+        <td><span class="badge ${sit.cls}">${sit.txt}</span>${etapasHtml}</td>
         <td>
           <div style="font-size:12px; color:var(--muted)">
             ${c.data_agendada ? '📅 ' + new Date(c.data_agendada + 'T12:00:00').toLocaleDateString('pt-BR') : 'Sem data'}<br>
@@ -381,6 +529,149 @@ async function renderCronograma() {
       <tbody>${html}</tbody>
     </table>
   `;
+}
+
+// ── RESUMO (cartões) ──
+function renderResumo(data) {
+  const ativos = data.filter(c => c.status !== 'Inativo');
+  const conta = (tipo) => {
+    const l = tipo ? ativos.filter(c => c.tipo === tipo) : ativos;
+    const real = l.filter(c => c.status === 'Realizado').length;
+    const atras = l.filter(c => situacao(c).txt === 'Atrasado').length;
+    return { prev: l.length, real, pend: l.length - real, atras, pct: l.length ? Math.round(real / l.length * 100) : 0 };
+  };
+  const t = conta(), i = conta('Inspeção'), o = conta('Observação');
+  const lideres = new Set(ativos.map(c => c.matricula)).size;
+  document.getElementById('resumo-cards').innerHTML = `
+    <div class="card"><div class="n">${lideres}</div><div class="l">Líderes</div></div>
+    <div class="card"><div class="n">${t.real}/${t.prev}</div><div class="l">Coachings realizados (${t.pct}%)</div></div>
+    <div class="card"><div class="n">${i.real}/${i.prev}</div><div class="l">Inspeção (${i.pct}%)</div></div>
+    <div class="card"><div class="n">${o.real}/${o.prev}</div><div class="l">Observação (${o.pct}%)</div></div>
+    <div class="card ${t.atras ? 'alerta' : ''}"><div class="n">${t.atras ? t.atras : t.pend}</div><div class="l">${t.atras ? 'Atrasados' : 'Faltam fazer'}</div></div>`;
+}
+
+// ── CADASTRO DE LÍDERES ──
+function abrirModalLider() {
+  document.getElementById('lider-matricula').value = '';
+  document.getElementById('lider-nome').value = '';
+  document.getElementById('lider-gerencia').value = document.getElementById('filtro-gerencia').value || '';
+  document.getElementById('lider-semestre').value = document.getElementById('filtro-semestre').value || 'S1';
+  document.getElementById('lider-insp').checked = true;
+  document.getElementById('lider-obs').checked = true;
+  document.getElementById('btn-salvar-lider').disabled = false;
+  document.getElementById('modal-lider').classList.add('show');
+}
+
+async function salvarLider() {
+  const safraId = document.getElementById('filtro-safra').value;
+  const matricula = document.getElementById('lider-matricula').value.replace(/\D/g, '');
+  const nome = document.getElementById('lider-nome').value.trim().toUpperCase();
+  const gerId = document.getElementById('lider-gerencia').value;
+  const sem = document.getElementById('lider-semestre').value;
+  const tipos = [];
+  if (document.getElementById('lider-insp').checked) tipos.push('Inspeção');
+  if (document.getElementById('lider-obs').checked) tipos.push('Observação');
+
+  if (!safraId || !matricula || !nome || !gerId || !tipos.length) {
+    alert('Preencha matrícula, nome, gerência e marque ao menos um coaching.');
+    return;
+  }
+
+  const btn = document.getElementById('btn-salvar-lider');
+  btn.disabled = true;
+
+  // Evita duplicar: verifica o que já existe para essa matrícula no semestre
+  const { data: existentes, error: e1 } = await sb.from('cronograma_coaching')
+    .select('id, tipo, status').eq('safra_id', safraId).eq('semestre', sem).eq('matricula', matricula);
+  if (e1) { alert('Erro: ' + e1.message); btn.disabled = false; return; }
+
+  const inf = infoSemestre(safraId, sem);
+  const novos = [], reativar = [];
+  tipos.forEach(tipo => {
+    const ex = (existentes || []).find(x => x.tipo === tipo);
+    if (!ex) novos.push({ safra_id: Number(safraId), semestre: sem, gerencia_id: Number(gerId), mes: inf.mesFim,
+                          lider_nome: nome, matricula, tipo, status: 'Pendente' });
+    else if (ex.status === 'Inativo') reativar.push(ex.id);
+  });
+
+  if (!novos.length && !reativar.length) {
+    alert('Esse líder já está no cronograma deste semestre.');
+    btn.disabled = false;
+    return;
+  }
+
+  if (novos.length) {
+    const { error } = await sb.from('cronograma_coaching').insert(novos);
+    if (error) { alert('Erro ao adicionar: ' + error.message); btn.disabled = false; return; }
+  }
+  if (reativar.length) {
+    const { error } = await sb.from('cronograma_coaching').update({ status: 'Pendente', gerencia_id: Number(gerId) }).in('id', reativar);
+    if (error) { alert('Erro ao reativar: ' + error.message); btn.disabled = false; return; }
+  }
+
+  fecharModal('modal-lider');
+  alert(`✅ ${nome} adicionado ao ${inf.rotulo}.`);
+  renderCronograma();
+}
+
+// Remove o líder do semestre (os dois tipos): marca como Inativo, sem apagar histórico
+async function removerLider(id) {
+  const c = linhasCrono[id];
+  if (!c) return;
+  if (!confirm(`Remover ${c.lider_nome} do cronograma do ${c.semestre || 'S1'}?\n\nOs coachings pendentes deixam de contar no previsto da gerência. Os já realizados são mantidos.`)) return;
+  const { error } = await sb.from('cronograma_coaching').update({ status: 'Inativo' })
+    .eq('safra_id', c.safra_id).eq('semestre', c.semestre || 'S1').eq('matricula', c.matricula).neq('status', 'Realizado');
+  if (error) { alert('Erro ao remover: ' + error.message); return; }
+  renderCronograma();
+}
+
+async function reativarLider(id) {
+  const c = linhasCrono[id];
+  if (!c) return;
+  if (!confirm(`Reativar ${c.lider_nome} no ${c.semestre || 'S1'}?`)) return;
+  const { error } = await sb.from('cronograma_coaching').update({ status: 'Pendente' })
+    .eq('safra_id', c.safra_id).eq('semestre', c.semestre || 'S1').eq('matricula', c.matricula).eq('status', 'Inativo');
+  if (error) { alert('Erro ao reativar: ' + error.message); return; }
+  renderCronograma();
+}
+
+// ── ABRIR 2º SEMESTRE: copia os líderes ativos do S1 como pendentes no S2 ──
+async function abrirSegundoSemestre() {
+  const safraId = document.getElementById('filtro-safra').value;
+  const saf = safras.find(x => String(x.id) === String(safraId));
+  if (!safraId) return;
+
+  const { data: s1, error: e1 } = await sb.from('cronograma_coaching')
+    .select('matricula, lider_nome, gerencia_id, tipo, status').eq('safra_id', safraId).eq('semestre', 'S1').neq('status', 'Inativo');
+  if (e1) { alert('Erro: ' + e1.message); return; }
+  const { data: s2, error: e2 } = await sb.from('cronograma_coaching')
+    .select('matricula, tipo').eq('safra_id', safraId).eq('semestre', 'S2');
+  if (e2) { alert('Erro: ' + e2.message); return; }
+
+  const jaExiste = new Set((s2 || []).map(r => r.matricula + '|' + r.tipo));
+  const inf = infoSemestre(safraId, 'S2');
+  const vistos = new Set();
+  const novos = [];
+  (s1 || []).forEach(r => {
+    const k = r.matricula + '|' + r.tipo;
+    if (jaExiste.has(k) || vistos.has(k)) return;
+    vistos.add(k);
+    novos.push({ safra_id: Number(safraId), semestre: 'S2', gerencia_id: r.gerencia_id, mes: inf.mesFim,
+                 lider_nome: r.lider_nome, matricula: r.matricula, tipo: r.tipo, status: 'Pendente' });
+  });
+
+  if (!novos.length) { alert('O 2º semestre já está aberto com todos os líderes ativos do 1º semestre.'); return; }
+
+  const lideres = new Set(novos.map(n => n.matricula)).size;
+  const aviso = hojeISO() < inf.inicio ? `\n\n⚠️ O 2º semestre só começa em ${fmtData(inf.inicio)}.` : '';
+  if (!confirm(`Abrir o ${inf.rotulo} da safra ${saf?.nome || ''}?\n\nSerão criados ${novos.length} coachings pendentes para ${lideres} líderes ativos do 1º semestre.${aviso}`)) return;
+
+  const { error } = await sb.from('cronograma_coaching').insert(novos);
+  if (error) { alert('Erro ao abrir o semestre: ' + error.message); return; }
+
+  document.getElementById('filtro-semestre').value = 'S2';
+  alert(`✅ ${inf.rotulo} aberto: ${novos.length} coachings criados.`);
+  renderCronograma();
 }
 
 // ── DIAGNÓSTICO QUANDO A LISTA VEM VAZIA ──

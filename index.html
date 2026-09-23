@@ -8,6 +8,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <!-- PDF.js para leitura dos PDFs do WeCheck -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+<!-- Chart.js para o Painel -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;700&family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -83,6 +85,26 @@ tr.inativo td{opacity:.55;}
 .resumo .card .l{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;}
 .resumo .card.alerta .n{color:var(--red);}
 .info-sem{font-size:12px;color:var(--muted);margin-bottom:12px;}
+/* Tudo que é digitado fica em caixa alta */
+input[type=text], input[type=search]{text-transform:uppercase;}
+/* ABAS */
+.tabs{display:flex;gap:4px;border-bottom:2px solid var(--border);margin-bottom:16px;}
+.tab{background:none;border:none;padding:10px 18px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;font-family:'Open Sans',sans-serif;}
+.tab.active{color:#07583C;border-bottom-color:#07583C;}
+/* PAINEL */
+.painel-grid{display:grid;grid-template-columns:minmax(260px,1fr) 2fr;gap:16px;margin-bottom:16px;}
+@media (max-width:900px){.painel-grid{grid-template-columns:1fr;}}
+.box{background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px;}
+.box h3{font-size:13px;font-weight:800;color:#07583C;margin-bottom:10px;}
+.box .sub{font-size:11px;color:var(--muted);margin:-6px 0 10px;}
+.barra{height:8px;background:#eef3ee;border-radius:6px;overflow:hidden;min-width:90px;}
+.barra > div{height:100%;background:#07583C;}
+.falta-ger{border-top:1px solid var(--border);padding:10px 0;}
+.falta-ger:first-child{border-top:none;}
+.falta-ger .t{font-weight:700;font-size:13px;margin-bottom:6px;}
+.falta-item{display:flex;justify-content:space-between;gap:10px;font-size:12px;padding:3px 0;flex-wrap:wrap;}
+.legenda{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-bottom:8px;}
+.legenda i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:middle;}
 .loading{text-align:center;padding:36px;color:var(--muted);font-size:14px;}
 </style>
 </head>
@@ -115,6 +137,12 @@ tr.inativo td{opacity:.55;}
       </select>
     </div>
     <div>
+      <label>Unidade</label>
+      <select id="filtro-unidade" onchange="montarFiltroGerencia(); renderCronograma()" style="min-width:120px">
+        <option value="">Todas</option>
+      </select>
+    </div>
+    <div>
       <label>Diretoria</label>
       <select id="filtro-diretoria" onchange="montarFiltroGerencia(); renderCronograma()">
         <option value="">Todas as Diretorias</option>
@@ -125,6 +153,10 @@ tr.inativo td{opacity:.55;}
       <select id="filtro-gerencia" onchange="renderCronograma()">
         <option value="">Todas as Gerências</option>
       </select>
+    </div>
+    <div>
+      <label>Buscar líder</label>
+      <input type="search" id="filtro-busca" placeholder="NOME OU MATRÍCULA" oninput="desenharTudo()" style="min-width:200px">
     </div>
     <div>
       <label>Mês do realizado</label>
@@ -149,13 +181,59 @@ tr.inativo td{opacity:.55;}
   <div class="info-sem" id="info-semestre"></div>
   <div class="resumo" id="resumo-cards"></div>
 
-  <!-- TABELA DE CRONOGRAMA -->
-  <div class="table-wrap">
-    <div class="table-header">
-      <span class="table-title">📋 Acompanhamentos Planejados</span>
+  <!-- ABAS -->
+  <div class="tabs">
+    <button class="tab active" id="tab-cronograma" onclick="trocarAba('cronograma')">📋 Cronograma</button>
+    <button class="tab" id="tab-painel" onclick="trocarAba('painel')">📊 Painel</button>
+  </div>
+
+  <!-- ABA CRONOGRAMA -->
+  <div id="aba-cronograma">
+    <div class="table-wrap">
+      <div class="table-header">
+        <span class="table-title">📋 Acompanhamentos Planejados</span>
+      </div>
+      <div id="crono-lista">
+        <div class="loading">Selecione os filtros acima para carregar o cronograma.</div>
+      </div>
     </div>
-    <div id="crono-lista">
-      <div class="loading">Selecione os filtros acima para carregar o cronograma.</div>
+  </div>
+
+  <!-- ABA PAINEL -->
+  <div id="aba-painel" style="display:none">
+    <div class="painel-grid">
+      <div class="box">
+        <h3>Situação geral</h3>
+        <div class="sub">Coachings planejados no filtro (Inspeção + Observação)</div>
+        <div style="position:relative;height:240px"><canvas id="graf-status"></canvas></div>
+      </div>
+      <div class="box">
+        <h3>Evolução no semestre</h3>
+        <div class="sub">Realizados acumulados × ritmo esperado para chegar em 100% no prazo</div>
+        <div style="position:relative;height:240px"><canvas id="graf-evolucao"></canvas></div>
+      </div>
+    </div>
+
+    <div class="box">
+      <h3>Por gerência</h3>
+      <div class="legenda">
+        <span><i style="background:#07583C"></i>Realizado</span>
+        <span><i style="background:#1a73e8"></i>Agendado</span>
+        <span><i style="background:#FDB952"></i>Pendente</span>
+        <span><i style="background:#DF4636"></i>Atrasado</span>
+      </div>
+      <div id="graf-gerencia-wrap" style="position:relative;height:300px"><canvas id="graf-gerencia"></canvas></div>
+    </div>
+
+    <div class="box">
+      <h3>Resumo por gerência</h3>
+      <div style="overflow-x:auto" id="tabela-gerencias"></div>
+    </div>
+
+    <div class="box">
+      <h3>Quem falta fazer</h3>
+      <div class="sub">Líderes com coaching pendente, agendado ou atrasado</div>
+      <div id="lista-falta"></div>
     </div>
   </div>
 </main>
@@ -249,6 +327,9 @@ let linhasCrono = {}; // registros carregados, por id
 let safras = [];
 let gerencias = [];
 let diretorias = [];
+let dadosBase = [];
+let abaAtual = 'cronograma';
+let graficos = {};
 
 // ── INIT (sem login obrigatório) ──
 // Se houver sessão da matriz no mesmo navegador, usa o perfil dela (libera Baixa Manual para admin/gestor).
@@ -301,7 +382,7 @@ function definirNomeOperador() {
   const atual = nomeOperador();
   const n = prompt('Informe seu nome (fica registrado nos agendamentos e validações):', atual);
   if (n === null) return atual;
-  const limpo = n.trim();
+  const limpo = n.trim().toUpperCase();
   try { localStorage.setItem('crono-tecnico', limpo); } catch (e) {}
   atualizarNomeCabecalho();
   return limpo;
@@ -337,6 +418,13 @@ async function carregarFiltros() {
     diretorias.map(dir => `<option value="${dir.id}">${dir.nome}</option>`).join('');
   if (!diretorias.length) dirEl.disabled = true;
 
+  // Unidades (a partir das gerências cadastradas)
+  const unis = {};
+  gerencias.forEach(g => { if (g.unidade_id != null) unis[g.unidade_id] = g.unidades?.nome || ('Unidade ' + g.unidade_id); });
+  const uniEl = document.getElementById('filtro-unidade');
+  uniEl.innerHTML = '<option value="">Todas</option>' +
+    Object.entries(unis).sort((a, b) => a[1].localeCompare(b[1])).map(([id, nome]) => `<option value="${id}">${nome}</option>`).join('');
+
   montarFiltroGerencia();
 
   // Select de gerência do modal "Adicionar líder"
@@ -352,12 +440,20 @@ async function carregarFiltros() {
   }
 }
 
-// Monta o filtro de gerência conforme a diretoria escolhida
+// Gerências que atendem Unidade + Diretoria escolhidas
+function gerenciasDoFiltro() {
+  const uniId = document.getElementById('filtro-unidade')?.value;
+  const dirId = document.getElementById('filtro-diretoria')?.value;
+  return gerencias.filter(g =>
+    (!uniId || String(g.unidade_id) === String(uniId)) &&
+    (!dirId || String(g.diretoria_id) === String(dirId)));
+}
+
+// Monta o filtro de gerência conforme unidade/diretoria escolhidas
 function montarFiltroGerencia() {
-  const dirId = document.getElementById('filtro-diretoria').value;
   const gerEl = document.getElementById('filtro-gerencia');
   const atual = gerEl.value;
-  const lista = dirId ? gerencias.filter(g => String(g.diretoria_id) === String(dirId)) : gerencias;
+  const lista = gerenciasDoFiltro();
   gerEl.innerHTML = '<option value="">Todas as Gerências</option>' +
     lista.map(ger => `<option value="${ger.id}">${ger.nome} (${ger.unidades?.nome || ''})</option>`).join('');
   if (lista.some(g => String(g.id) === String(atual))) gerEl.value = atual;
@@ -421,9 +517,10 @@ async function renderCronograma() {
   if (mes) q = q.eq('mes', mes);
   if (!verInativos) q = q.neq('status', 'Inativo');
 
+  const uniId = document.getElementById('filtro-unidade')?.value;
   if (gerId) q = q.eq('gerencia_id', gerId);
-  else if (dirId) {
-    const ids = gerencias.filter(g => String(g.diretoria_id) === String(dirId)).map(g => g.id);
+  else if (dirId || uniId) {
+    const ids = gerenciasDoFiltro().map(g => g.id);
     q = q.in('gerencia_id', ids.length ? ids : [-1]);
   }
 
@@ -442,8 +539,30 @@ async function renderCronograma() {
 
   // Nada encontrado: diagnóstico automático
   if (!data || data.length === 0) {
+    dadosBase = [];
     document.getElementById('resumo-cards').innerHTML = '';
+    if (abaAtual === 'painel') renderPainel([]);
     await diagnosticarVazio(safraId, mes, gerId);
+    return;
+  }
+
+  dadosBase = data;
+  desenharTudo();
+}
+
+// Aplica a busca por nome/matrícula e redesenha tabela, cartões e painel (sem ir ao banco)
+function desenharTudo() {
+  const termo = normalizarTexto(document.getElementById('filtro-busca')?.value || '').trim();
+  let d = dadosBase;
+  if (termo) d = d.filter(c => normalizarTexto(c.lider_nome).includes(termo) || String(c.matricula).includes(termo));
+  renderResumo(d);
+  desenharTabela(d);
+  if (abaAtual === 'painel') renderPainel(d);
+}
+
+function desenharTabela(data) {
+  if (!data.length) {
+    document.getElementById('crono-lista').innerHTML = '<div style="padding:20px; color:var(--muted); text-align:center;">Nenhum líder encontrado para a busca.</div>';
     return;
   }
 
@@ -454,7 +573,6 @@ async function renderCronograma() {
 
   linhasCrono = {};
   data.forEach(c => { linhasCrono[c.id] = c; });
-  renderResumo(data);
 
   const html = data.map(c => {
     const mesLinha = String(c.mes || '').substring(0, 7);
@@ -529,6 +647,142 @@ async function renderCronograma() {
       <tbody>${html}</tbody>
     </table>
   `;
+}
+
+// ── ABAS ──
+function trocarAba(aba) {
+  abaAtual = aba;
+  document.getElementById('aba-cronograma').style.display = aba === 'cronograma' ? '' : 'none';
+  document.getElementById('aba-painel').style.display = aba === 'painel' ? '' : 'none';
+  document.getElementById('tab-cronograma').classList.toggle('active', aba === 'cronograma');
+  document.getElementById('tab-painel').classList.toggle('active', aba === 'painel');
+  if (aba === 'painel') desenharTudo();
+}
+
+// ── PAINEL ──
+const COR = { Realizado: '#07583C', Agendado: '#1a73e8', Pendente: '#FDB952', Atrasado: '#DF4636' };
+
+// Agrupa a situação em 4 categorias para os gráficos
+function categoria(c) {
+  const t = situacao(c).txt;
+  if (t.startsWith('Realizado')) return 'Realizado';
+  if (t === 'Atrasado') return 'Atrasado';
+  if (t === 'Agendado') return 'Agendado';
+  return 'Pendente';
+}
+
+function mesesDoFiltro() {
+  const safraId = document.getElementById('filtro-safra').value;
+  const saf = safras.find(x => String(x.id) === String(safraId));
+  const a = Number(saf?.ano_ini) || new Date().getFullYear();
+  const sem = document.getElementById('filtro-semestre').value;
+  const lista = [];
+  const add = (ano, m) => lista.push(`${ano}-${String(m).padStart(2, '0')}`);
+  if (sem !== 'S2') for (let m = 4; m <= 9; m++) add(a, m);
+  if (sem !== 'S1') { for (let m = 10; m <= 12; m++) add(a, m); for (let m = 1; m <= 3; m++) add(a + 1, m); }
+  return lista;
+}
+
+function novoGrafico(id, config) {
+  if (graficos[id]) graficos[id].destroy();
+  const el = document.getElementById(id);
+  if (!el || typeof Chart === 'undefined') return;
+  graficos[id] = new Chart(el, config);
+}
+
+function renderPainel(data) {
+  const ativos = (data || []).filter(c => c.status !== 'Inativo');
+  const NOMES_MES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+
+  // 1) Rosca: situação geral
+  const tot = { Realizado: 0, Agendado: 0, Pendente: 0, Atrasado: 0 };
+  ativos.forEach(c => tot[categoria(c)]++);
+  const pct = ativos.length ? Math.round(tot.Realizado / ativos.length * 100) : 0;
+  novoGrafico('graf-status', {
+    type: 'doughnut',
+    data: { labels: Object.keys(tot), datasets: [{ data: Object.values(tot), backgroundColor: Object.keys(tot).map(k => COR[k]), borderWidth: 2 }] },
+    options: { maintainAspectRatio: false, cutout: '62%',
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+                 title: { display: true, text: `${pct}% realizado — ${tot.Realizado} de ${ativos.length}`, color: '#07583C', font: { size: 13, weight: 'bold' } } } }
+  });
+
+  // 2) Linha: evolução acumulada × ritmo esperado
+  const meses = mesesDoFiltro();
+  const porMes = {};
+  ativos.filter(c => c.status === 'Realizado').forEach(c => { const m = String(c.mes || '').substring(0, 7); porMes[m] = (porMes[m] || 0) + 1; });
+  const antes = ativos.filter(c => c.status === 'Realizado' && String(c.mes || '') < meses[0]).length;
+  let acum = antes;
+  const hojeMes = hojeISO().substring(0, 7);
+  const realizadoAcum = meses.map(m => { acum += (porMes[m] || 0); return m <= hojeMes ? acum : null; });
+  const esperado = meses.map((m, i) => Math.round(ativos.length * (i + 1) / meses.length));
+  novoGrafico('graf-evolucao', {
+    type: 'line',
+    data: {
+      labels: meses.map(m => NOMES_MES[Number(m.substring(5, 7)) - 1] + '/' + m.substring(2, 4)),
+      datasets: [
+        { label: 'Realizado acumulado', data: realizadoAcum, borderColor: '#07583C', backgroundColor: 'rgba(7,88,60,.12)', fill: true, tension: .25, pointRadius: 4 },
+        { label: 'Ritmo esperado', data: esperado, borderColor: '#FDB952', borderDash: [6, 4], pointRadius: 0, fill: false },
+        { label: 'Planejado', data: meses.map(() => ativos.length), borderColor: '#B3DD64', pointRadius: 0, borderWidth: 1.5, fill: false }
+      ]
+    },
+    options: { maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
+  });
+
+  // 3) Barras por gerência (empilhado)
+  const ger = {};
+  ativos.forEach(c => {
+    const nome = `${c.gerencias?.nome || 'Sem gerência'} (${c.gerencias?.unidades?.nome || '-'})`;
+    if (!ger[nome]) ger[nome] = { Realizado: 0, Agendado: 0, Pendente: 0, Atrasado: 0, total: 0, lideres: new Set() };
+    ger[nome][categoria(c)]++;
+    ger[nome].total++;
+    ger[nome].lideres.add(c.matricula);
+  });
+  const nomesGer = Object.keys(ger).sort((a, b) => (ger[a].Realizado / ger[a].total) - (ger[b].Realizado / ger[b].total));
+  document.getElementById('graf-gerencia-wrap').style.height = Math.max(160, nomesGer.length * 32 + 50) + 'px';
+  novoGrafico('graf-gerencia', {
+    type: 'bar',
+    data: { labels: nomesGer,
+      datasets: ['Realizado', 'Agendado', 'Pendente', 'Atrasado'].map(k => ({ label: k, data: nomesGer.map(n => ger[n][k]), backgroundColor: COR[k] })) },
+    options: { indexAxis: 'y', maintainAspectRatio: false,
+      scales: { x: { stacked: true, ticks: { precision: 0 } }, y: { stacked: true, ticks: { font: { size: 11 } } } },
+      plugins: { legend: { display: false },
+        tooltip: { callbacks: { footer: (items) => { const n = nomesGer[items[0].dataIndex]; return `${Math.round(ger[n].Realizado / ger[n].total * 100)}% realizado`; } } } } }
+  });
+
+  // 4) Tabela resumo por gerência
+  const linhas = [...nomesGer].reverse().map(n => {
+    const g = ger[n];
+    const p = Math.round(g.Realizado / g.total * 100);
+    return `<tr>
+      <td><b>${n}</b></td><td>${g.lideres.size}</td><td>${g.total}</td>
+      <td style="color:#07583C;font-weight:700">${g.Realizado}</td>
+      <td>${g.Pendente + g.Agendado}</td>
+      <td style="color:${g.Atrasado ? '#d93025' : 'inherit'};font-weight:${g.Atrasado ? 700 : 400}">${g.Atrasado}</td>
+      <td><div style="display:flex;align-items:center;gap:8px"><div class="barra"><div style="width:${p}%"></div></div><b>${p}%</b></div></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('tabela-gerencias').innerHTML = nomesGer.length ? `
+    <table><thead><tr><th>Gerência</th><th>Líderes</th><th>Planejados</th><th>Realizados</th><th>Pendentes</th><th>Atrasados</th><th>% Realizado</th></tr></thead>
+    <tbody>${linhas}</tbody></table>` : '<div style="color:var(--muted);font-size:13px">Sem dados no filtro.</div>';
+
+  // 5) Quem falta fazer (agrupado por gerência → líder)
+  const falta = {};
+  ativos.filter(c => c.status !== 'Realizado').forEach(c => {
+    const nome = `${c.gerencias?.nome || 'Sem gerência'} (${c.gerencias?.unidades?.nome || '-'})`;
+    falta[nome] = falta[nome] || {};
+    const k = c.matricula;
+    falta[nome][k] = falta[nome][k] || { nome: c.lider_nome, itens: [] };
+    const sit = situacao(c);
+    falta[nome][k].itens.push(`<span class="badge ${sit.cls}">${c.tipo}: ${sit.txt}</span>`);
+  });
+  const grupos = Object.keys(falta).sort();
+  document.getElementById('lista-falta').innerHTML = grupos.length ? grupos.map(gn => {
+    const lids = Object.entries(falta[gn]).sort((a, b) => a[1].nome.localeCompare(b[1].nome));
+    return `<div class="falta-ger"><div class="t">${gn} — ${lids.length} líder(es)</div>
+      ${lids.map(([mat, l]) => `<div class="falta-item"><span>${l.nome} <span style="color:var(--muted)">(${mat})</span></span><span style="display:flex;gap:4px;flex-wrap:wrap">${l.itens.join('')}</span></div>`).join('')}
+    </div>`;
+  }).join('') : '<div style="color:#07583C;font-weight:700;font-size:13px">✅ Todos os coachings do filtro foram realizados.</div>';
 }
 
 // ── RESUMO (cartões) ──
@@ -718,7 +972,7 @@ function abrirModalAgendar(id) {
 async function salvarAgendamento() {
   const id = document.getElementById('agendar-id').value;
   const dt = document.getElementById('agendar-data').value;
-  const tec = document.getElementById('agendar-tecnico').value;
+  const tec = document.getElementById('agendar-tecnico').value.trim().toUpperCase();
 
   const { error } = await sb.from('cronograma_coaching').update({
     data_agendada: dt || null,

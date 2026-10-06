@@ -185,6 +185,7 @@ input[type=text], input[type=search]{text-transform:uppercase;}
   <div class="tabs">
     <button class="tab active" id="tab-cronograma" onclick="trocarAba('cronograma')">📋 Cronograma</button>
     <button class="tab" id="tab-painel" onclick="trocarAba('painel')">📊 Painel</button>
+    <button class="tab" id="tab-tecnicos" onclick="trocarAba('tecnicos')" style="display:none">👷 Técnicos</button>
   </div>
 
   <!-- ABA CRONOGRAMA -->
@@ -196,6 +197,25 @@ input[type=text], input[type=search]{text-transform:uppercase;}
       <div id="crono-lista">
         <div class="loading">Selecione os filtros acima para carregar o cronograma.</div>
       </div>
+    </div>
+  </div>
+
+  <!-- ABA TÉCNICOS (só administrador) -->
+  <div id="aba-tecnicos" style="display:none">
+    <div class="table-wrap">
+      <div class="table-header"><span class="table-title">👷 Técnicos de Segurança que acompanham o coaching</span></div>
+      <div style="padding:16px 18px">
+        <p style="margin:0 0 12px;font-size:13px;color:var(--muted)">Só os técnicos desta lista aparecem para agendar. Cada técnico aparece apenas nas gerências da unidade dele.</p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <div style="flex:2;min-width:220px"><label>Nome do técnico</label><input type="text" id="tec-nome" style="width:100%" placeholder="Nome completo"></div>
+          <div style="flex:1;min-width:120px"><label>Matrícula (opcional)</label><input type="text" id="tec-matricula" style="width:100%"></div>
+          <div style="flex:1;min-width:140px"><label>Unidade</label><select id="tec-unidade" style="width:100%"></select></div>
+          <button class="btn btn-primary" id="tec-salvar" onclick="salvarTecnico()">Adicionar técnico</button>
+          <button class="btn btn-secondary" id="tec-cancelar" onclick="limparFormTecnico()" style="display:none">Cancelar edição</button>
+        </div>
+        <div id="tec-erro" style="color:#DF4636;font-size:13px;margin-top:8px"></div>
+      </div>
+      <div id="tec-lista" style="padding:0 18px 18px"></div>
     </div>
   </div>
 
@@ -249,7 +269,8 @@ input[type=text], input[type=search]{text-transform:uppercase;}
     </div>
     <div style="margin-bottom:14px;">
       <label>Técnico Responsável</label>
-      <input type="text" id="agendar-tecnico" style="width:100%" placeholder="Ex: João Silva">
+      <select id="agendar-tecnico" style="width:100%"></select>
+      <div id="agendar-tecnico-ajuda" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="fecharModal('modal-agendar')">Cancelar</button>
@@ -327,6 +348,12 @@ let usuario = null;
 let usuarioEmail = '';
 const agoraISO = () => new Date().toISOString();
 const auditoria = () => ({ atualizado_por: nomeOperador() || null, atualizado_por_email: usuarioEmail || null, atualizado_em: agoraISO() });
+// Quem pode cadastrar técnicos (aba 👷 Técnicos)
+const ADMIN_EMAILS = ['tkichelewski@usinasantaadelia.com.br'];
+let tecnicos = [];      // tabela tecnicos_ssma
+let unidadesLista = []; // tabela unidades
+const normTxt = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+const ehAdminTecnicos = () => ADMIN_EMAILS.includes(usuarioEmail);
 let linhasCrono = {}; // registros carregados, por id
 let safras = [];
 let gerencias = [];
@@ -347,6 +374,8 @@ async function init() {
     usuario = userData || null;
   } catch (e) { usuario = null; }
   atualizarNomeCabecalho();
+  await carregarTecnicos();
+  if (ehAdminTecnicos()) document.getElementById('tab-tecnicos').style.display = '';
 
   // Semestre atual por padrão (abr–set = S1, out–mar = S2); mês do realizado em branco
   const mAtual = new Date().getMonth() + 1;
@@ -648,7 +677,10 @@ function trocarAba(aba) {
   document.getElementById('aba-painel').style.display = aba === 'painel' ? '' : 'none';
   document.getElementById('tab-cronograma').classList.toggle('active', aba === 'cronograma');
   document.getElementById('tab-painel').classList.toggle('active', aba === 'painel');
+  document.getElementById('aba-tecnicos').style.display = aba === 'tecnicos' ? '' : 'none';
+  document.getElementById('tab-tecnicos').classList.toggle('active', aba === 'tecnicos');
   if (aba === 'painel') desenharTudo();
+  if (aba === 'tecnicos') renderTecnicos();
 }
 
 // ── PAINEL ──
@@ -952,23 +984,124 @@ async function diagnosticarVazio(safraId, mes, gerId) {
   el.innerHTML = `<div style="padding:20px; font-size:13px; line-height:1.6; color:var(--text, #333);">${msg}</div>`;
 }
 
+// ── TÉCNICOS DE SEGURANÇA (cadastro e filtro por unidade) ──
+async function carregarTecnicos() {
+  const [rt, ru] = await Promise.all([
+    sb.from('tecnicos_ssma').select('*').order('nome'),
+    sb.from('unidades').select('id,nome').order('nome')
+  ]);
+  if (rt.error) console.warn('Tabela tecnicos_ssma indisponível:', rt.error.message);
+  tecnicos = rt.data || [];
+  unidadesLista = ru.data || [];
+}
+const nomeUnidade = id => (unidadesLista.find(u => u.id === id) || {}).nome || '-';
+
+// Unidades atendidas por uma gerência: "JB" → só JB; "JB/PB" → JB, PB e o próprio JB/PB
+function unidadesDaGerencia(nomeUnidadeGer) {
+  const alvo = normTxt(nomeUnidadeGer);
+  if (!alvo) return [];
+  const partes = alvo.split(/[\/,]+/).map(x => x.trim()).filter(Boolean);
+  return unidadesLista.filter(u => normTxt(u.nome) === alvo || partes.includes(normTxt(u.nome))).map(u => u.id);
+}
+function tecnicosDaGerencia(c) {
+  const uids = unidadesDaGerencia(c?.gerencias?.unidades?.nome);
+  return tecnicos.filter(t => t.ativo && uids.includes(t.unidade_id));
+}
+
+function renderTecnicos() {
+  const sel = document.getElementById('tec-unidade');
+  if (!sel.options.length) sel.innerHTML = unidadesLista.map(u => `<option value="${u.id}">${u.nome}</option>`).join('');
+  const el = document.getElementById('tec-lista');
+  if (!tecnicos.length) { el.innerHTML = '<div class="loading">Nenhum técnico cadastrado ainda.</div>'; return; }
+  const porUn = {};
+  tecnicos.forEach(t => (porUn[t.unidade_id] = porUn[t.unidade_id] || []).push(t));
+  el.innerHTML = Object.keys(porUn).map(Number).sort((a, b) => nomeUnidade(a).localeCompare(nomeUnidade(b))).map(uid => `
+    <div style="font-weight:700;color:#07583C;margin:14px 0 6px">${nomeUnidade(uid)}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      ${porUn[uid].map(t => `<tr style="${t.ativo ? '' : 'opacity:.5'}">
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)"><b>${t.nome}</b>${t.matricula ? ' <span style="color:var(--muted);font-size:11px">Mat: ' + t.matricula + '</span>' : ''}${t.ativo ? '' : ' <span style="font-size:11px">(inativo)</span>'}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap">
+          <button class="btn btn-secondary btn-sm" onclick="editarTecnico(${t.id})">✏️ Editar</button>
+          <button class="btn btn-secondary btn-sm" onclick="alternarTecnico(${t.id})">${t.ativo ? '🚫 Desativar' : '↩️ Reativar'}</button>
+        </td></tr>`).join('')}
+    </table>`).join('');
+}
+let tecEditando = null;
+function limparFormTecnico() {
+  tecEditando = null;
+  document.getElementById('tec-nome').value = '';
+  document.getElementById('tec-matricula').value = '';
+  document.getElementById('tec-erro').textContent = '';
+  document.getElementById('tec-salvar').textContent = 'Adicionar técnico';
+  document.getElementById('tec-cancelar').style.display = 'none';
+}
+function editarTecnico(id) {
+  const t = tecnicos.find(x => x.id === id); if (!t) return;
+  tecEditando = id;
+  document.getElementById('tec-nome').value = t.nome;
+  document.getElementById('tec-matricula').value = t.matricula || '';
+  document.getElementById('tec-unidade').value = t.unidade_id;
+  document.getElementById('tec-salvar').textContent = 'Salvar alteração';
+  document.getElementById('tec-cancelar').style.display = '';
+  document.getElementById('tec-nome').focus();
+}
+async function salvarTecnico() {
+  if (!ehAdminTecnicos()) return;
+  const nome = document.getElementById('tec-nome').value.trim().toUpperCase().replace(/\s+/g, ' ');
+  const matricula = document.getElementById('tec-matricula').value.trim() || null;
+  const unidade_id = Number(document.getElementById('tec-unidade').value);
+  const erro = document.getElementById('tec-erro');
+  if (!nome) { erro.textContent = 'Informe o nome do técnico.'; return; }
+  if (!unidade_id) { erro.textContent = 'Escolha a unidade.'; return; }
+  const dup = tecnicos.find(t => t.id !== tecEditando && normTxt(t.nome) === normTxt(nome) && t.unidade_id === unidade_id);
+  if (dup) { erro.textContent = 'Esse técnico já está cadastrado nessa unidade.'; return; }
+  const dados = { nome, matricula, unidade_id, ...auditoria() };
+  const { error } = tecEditando
+    ? await sb.from('tecnicos_ssma').update(dados).eq('id', tecEditando)
+    : await sb.from('tecnicos_ssma').insert({ ...dados, ativo: true });
+  if (error) { erro.textContent = 'Não salvou: ' + error.message; return; }
+  limparFormTecnico();
+  await carregarTecnicos(); renderTecnicos();
+}
+async function alternarTecnico(id) {
+  const t = tecnicos.find(x => x.id === id); if (!t || !ehAdminTecnicos()) return;
+  if (t.ativo && !confirm('Desativar ' + t.nome + '? Ele deixa de aparecer para agendar, mas os coachings já feitos continuam com o nome dele.')) return;
+  const { error } = await sb.from('tecnicos_ssma').update({ ativo: !t.ativo, ...auditoria() }).eq('id', id);
+  if (error) { alert('Não salvou: ' + error.message); return; }
+  await carregarTecnicos(); renderTecnicos();
+}
+
 // ── AÇÕES DE AGENDAMENTO E BAIXA MANUAL ──
 function abrirModalAgendar(id) {
   const c = linhasCrono[id] || {};
   document.getElementById('agendar-id').value = id;
   document.getElementById('agendar-data').value = c.data_agendada || '';
-  document.getElementById('agendar-tecnico').value = c.tecnico_nome || nomeOperador() || '';
+  const lista = tecnicosDaGerencia(c);
+  const atual = c.tecnico_nome || '';
+  const atualNaLista = lista.some(t => normTxt(t.nome) === normTxt(atual));
+  const sel = document.getElementById('agendar-tecnico');
+  sel.innerHTML = '<option value="">— Selecione o técnico —</option>' +
+    lista.map(t => `<option value="${t.id}" ${normTxt(t.nome) === normTxt(atual) ? 'selected' : ''}>${t.nome}</option>`).join('') +
+    (atual && !atualNaLista ? `<option value="atual" selected>${atual} (definido antes, fora da lista)</option>` : '');
+  const un = c.gerencias?.unidades?.nome || '-';
+  document.getElementById('agendar-tecnico-ajuda').textContent = lista.length
+    ? 'Técnicos cadastrados para ' + un + '.'
+    : 'Nenhum técnico cadastrado para ' + un + '.' + (ehAdminTecnicos() ? ' Cadastre na aba 👷 Técnicos.' : ' Fale com o administrador.');
   document.getElementById('modal-agendar').classList.add('show');
 }
 
 async function salvarAgendamento() {
   const id = document.getElementById('agendar-id').value;
   const dt = document.getElementById('agendar-data').value;
-  const tec = document.getElementById('agendar-tecnico').value.trim().toUpperCase();
+  const selTec = document.getElementById('agendar-tecnico').value;
+  const c0 = linhasCrono[id] || {};
+  const tObj = tecnicos.find(t => String(t.id) === selTec);
+  const tec = selTec === 'atual' ? (c0.tecnico_nome || '') : (tObj ? tObj.nome : '');
 
   const { error } = await sb.from('cronograma_coaching').update({
     data_agendada: dt || null,
     tecnico_nome: tec || null,
+    tecnico_id: selTec === 'atual' ? (c0.tecnico_id || null) : (tObj ? tObj.id : null),
     status: (dt || tec) ? 'Agendado' : 'Pendente',
     ...auditoria()
   }).eq('id', id);
@@ -1150,6 +1283,16 @@ async function processarPDFWeCheck() {
 
       if (c.data_lider && info.dataFinalizado && c.data_lider !== info.dataFinalizado) {
         avisos.push(`A data do coaching (${fmtData(info.dataFinalizado)}) é diferente da data do checklist do líder (${fmtData(c.data_lider)}).`);
+      }
+      if (info.tecnicoNome) {
+        const pdfTec = normTxt(info.tecnicoNome);
+        if (c.tecnico_nome && pdfTec !== normTxt(c.tecnico_nome)) {
+          avisos.push(`O técnico do PDF (${info.tecnicoNome}) é diferente do técnico agendado (${c.tecnico_nome}).`);
+        }
+        const daUnidade = tecnicosDaGerencia(c);
+        if (daUnidade.length && !daUnidade.some(t => normTxt(t.nome) === pdfTec)) {
+          avisos.push(`O técnico do PDF (${info.tecnicoNome}) não está no cadastro de técnicos de ${c.gerencias?.unidades?.nome || 'desta unidade'}.`);
+        }
       }
       update.evidencia_url = null; // preenchido após upload
       update.data_coaching = info.dataFinalizado;

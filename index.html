@@ -117,7 +117,7 @@ input[type=text], input[type=search]{text-transform:uppercase;}
   </div>
   <div class="user-info">
     <span>Olá, <strong id="user-nome">Carregando...</strong></span>
-    <button class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="sair()">Ir para o Sistema IP</button>
+    <button class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="sair()">Sair</button>
   </div>
 </header>
 
@@ -322,7 +322,11 @@ const SB_KEY = 'sb_publishable_lxiF04jATB1HMLINX-FvOg_3JOjXxrQ';
 const SB_OPTS = { auth: { persistSession:true, storageKey:'sistema-ip-auth', autoRefreshToken:true } };
 const sb = supabase.createClient(SB_URL, SB_KEY, SB_OPTS);
 
+const PORTAL_URL = 'https://tkichelewski-web.github.io/portal-ip/';
 let usuario = null;
+let usuarioEmail = '';
+const agoraISO = () => new Date().toISOString();
+const auditoria = () => ({ atualizado_por: nomeOperador() || null, atualizado_por_email: usuarioEmail || null, atualizado_em: agoraISO() });
 let linhasCrono = {}; // registros carregados, por id
 let safras = [];
 let gerencias = [];
@@ -331,20 +335,17 @@ let dadosBase = [];
 let abaAtual = 'cronograma';
 let graficos = {};
 
-// ── INIT (sem login obrigatório) ──
-// Se houver sessão da matriz no mesmo navegador, usa o perfil dela (libera Baixa Manual para admin/gestor).
-// Se não houver, o cronograma funciona em modo livre para os técnicos.
+// ── INIT (login obrigatório pelo Portal Índice de Prevenção SSMA) ──
+// A sessão é a mesma do portal. O perfil do usuário libera a Baixa Manual para admin/gestor,
+// e o nome dele fica registrado em agendamentos, validações e baixas.
 async function init() {
+  const { data:{ session } } = await sb.auth.getSession();
+  if (!session) { location.replace(PORTAL_URL + '?voltar=' + encodeURIComponent(location.href.split('#')[0])); return; }
+  usuarioEmail = (session.user.email || '').toLowerCase();
   try {
-    const { data:{ session } } = await sb.auth.getSession();
-    if (session) {
-      const { data: userData } = await sb.from('usuarios').select('*, gerencias(nome)').eq('auth_id', session.user.id).single();
-      usuario = userData || null;
-    }
-  } catch (e) {
-    console.warn('Sem sessão, seguindo em modo livre.', e);
-    usuario = null;
-  }
+    const { data: userData } = await sb.from('usuarios').select('*, gerencias(nome)').eq('auth_id', session.user.id).maybeSingle();
+    usuario = userData || null;
+  } catch (e) { usuario = null; }
   atualizarNomeCabecalho();
 
   // Semestre atual por padrão (abr–set = S1, out–mar = S2); mês do realizado em branco
@@ -358,24 +359,14 @@ async function init() {
 
 // Nome de quem está operando: do login (se houver) ou digitado pelo técnico
 function nomeOperador() {
-  if (usuario?.nome) return usuario.nome;
-  let n = '';
-  try { n = localStorage.getItem('crono-tecnico') || ''; } catch (e) {}
-  return n;
+  return usuario?.nome || usuarioEmail || '';
 }
 
 function atualizarNomeCabecalho() {
   const el = document.getElementById('user-nome');
-  if (usuario?.nome) {
-    el.textContent = usuario.nome;
-    el.style.cursor = 'default';
-    el.onclick = null;
-  } else {
-    el.textContent = nomeOperador() || 'Técnico (clique para informar seu nome)';
-    el.style.cursor = 'pointer';
-    el.title = 'Clique para alterar seu nome';
-    el.onclick = definirNomeOperador;
-  }
+  el.textContent = nomeOperador() || '-';
+  el.style.cursor = 'default';
+  el.onclick = null;
 }
 
 function definirNomeOperador() {
@@ -623,6 +614,7 @@ function desenharTabela(data) {
           <div style="font-size:12px; color:var(--muted)">
             ${c.data_agendada ? '📅 ' + new Date(c.data_agendada + 'T12:00:00').toLocaleDateString('pt-BR') : 'Sem data'}<br>
             ${c.tecnico_nome ? '👤 ' + c.tecnico_nome : 'Técnico ñ def.'}
+            ${c.baixa_por ? '<br>✔ Baixa por ' + c.baixa_por + (c.baixa_em ? ' em ' + new Date(c.baixa_em).toLocaleDateString('pt-BR') : '') : ''}
           </div>
         </td>
         <td>
@@ -873,7 +865,7 @@ async function removerLider(id) {
   const c = linhasCrono[id];
   if (!c) return;
   if (!confirm(`Remover ${c.lider_nome} do cronograma do ${c.semestre || 'S1'}?\n\nOs coachings pendentes deixam de contar no previsto da gerência. Os já realizados são mantidos.`)) return;
-  const { error } = await sb.from('cronograma_coaching').update({ status: 'Inativo' })
+  const { error } = await sb.from('cronograma_coaching').update({ status: 'Inativo', ...auditoria() })
     .eq('safra_id', c.safra_id).eq('semestre', c.semestre || 'S1').eq('matricula', c.matricula).neq('status', 'Realizado');
   if (error) { alert('Erro ao remover: ' + error.message); return; }
   renderCronograma();
@@ -883,7 +875,7 @@ async function reativarLider(id) {
   const c = linhasCrono[id];
   if (!c) return;
   if (!confirm(`Reativar ${c.lider_nome} no ${c.semestre || 'S1'}?`)) return;
-  const { error } = await sb.from('cronograma_coaching').update({ status: 'Pendente' })
+  const { error } = await sb.from('cronograma_coaching').update({ status: 'Pendente', ...auditoria() })
     .eq('safra_id', c.safra_id).eq('semestre', c.semestre || 'S1').eq('matricula', c.matricula).eq('status', 'Inativo');
   if (error) { alert('Erro ao reativar: ' + error.message); return; }
   renderCronograma();
@@ -977,7 +969,8 @@ async function salvarAgendamento() {
   const { error } = await sb.from('cronograma_coaching').update({
     data_agendada: dt || null,
     tecnico_nome: tec || null,
-    status: (dt || tec) ? 'Agendado' : 'Pendente'
+    status: (dt || tec) ? 'Agendado' : 'Pendente',
+    ...auditoria()
   }).eq('id', id);
 
   if (error) {
@@ -995,7 +988,9 @@ async function darBaixaManual(id) {
 
   const { error } = await sb.from('cronograma_coaching').update({ 
     status: 'Realizado',
-    tecnico_nome: tecnicoResponsavel
+    tecnico_nome: tecnicoResponsavel,
+    baixa_por: nomeOperador() || null, baixa_por_email: usuarioEmail || null, baixa_em: agoraISO(),
+    ...auditoria()
   }).eq('id', id);
 
   if (error) {
@@ -1213,6 +1208,12 @@ async function processarPDFWeCheck() {
       update.status = 'Agendado';
     }
 
+    // Quem validou cada checklist e quem concluiu (baixa)
+    if (etapa === 'tecnico') { update.validado_tecnico_por = nomeOperador() || null; update.validado_tecnico_em = agoraISO(); }
+    else { update.validado_lider_por = nomeOperador() || null; update.validado_lider_em = agoraISO(); }
+    if (concluiu) { update.baixa_por = nomeOperador() || null; update.baixa_por_email = usuarioEmail || null; update.baixa_em = agoraISO(); }
+    Object.assign(update, auditoria());
+
     const { error: dbError } = await sb.from('cronograma_coaching').update(update).eq('id', idCrono);
     if (dbError) throw dbError;
 
@@ -1233,8 +1234,9 @@ function fecharModal(id) {
   document.getElementById(id).classList.remove('show');
 }
 
-function sair() {
-  window.location.href = 'index.html'; // Retorna pro sistema principal
+async function sair() {
+  await sb.auth.signOut();
+  window.location.href = PORTAL_URL;
 }
 
 document.addEventListener('DOMContentLoaded', init);

@@ -212,6 +212,7 @@ input[type=text], input[type=search]{text-transform:uppercase;}
           <div style="flex:2;min-width:220px"><label>Nome do técnico</label><input type="text" id="tec-nome" style="width:100%" placeholder="Nome completo"></div>
           <div style="flex:1;min-width:120px"><label>Matrícula (opcional)</label><input type="text" id="tec-matricula" style="width:100%"></div>
           <div style="flex:1;min-width:140px"><label>Unidade</label><select id="tec-unidade" style="width:100%"></select></div>
+          <div style="flex:2;min-width:220px"><label>E-mail</label><input type="email" id="tec-email" style="width:100%" placeholder="nome@usinasantaadelia.com.br"></div>
           <button class="btn btn-primary" id="tec-salvar" onclick="salvarTecnico()">Adicionar técnico</button>
           <button class="btn btn-secondary" id="tec-cancelar" onclick="limparFormTecnico()" style="display:none">Cancelar edição</button>
         </div>
@@ -288,6 +289,10 @@ input[type=text], input[type=search]{text-transform:uppercase;}
       <div style="flex:1"><label>Duração</label><select id="agendar-duracao" style="width:100%"><option value="30">30 min</option><option value="60" selected>1 hora</option><option value="90">1h30</option><option value="120">2 horas</option></select></div>
     </div>
     <div style="margin-bottom:14px;">
+      <label>E-mail do líder</label>
+      <input type="email" id="agendar-email-lider" style="width:100%" placeholder="nome@usinasantaadelia.com.br">
+    </div>
+    <div style="margin-bottom:14px;">
       <label>Técnico Responsável</label>
       <select id="agendar-tecnico" style="width:100%"></select>
       <div id="agendar-tecnico-ajuda" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
@@ -316,6 +321,7 @@ input[type=text], input[type=search]{text-transform:uppercase;}
       </div>
     </div>
     <div style="margin-bottom:12px;"><label>Nome do líder</label><input type="text" id="lider-nome" style="width:100%"></div>
+    <div style="margin-bottom:12px;"><label>E-mail do líder (para a agenda do Outlook)</label><input type="email" id="lider-email" style="width:100%" placeholder="nome@usinasantaadelia.com.br"></div>
     <div style="margin-bottom:12px;"><label>Gerência</label><select id="lider-gerencia" style="width:100%"></select></div>
     <div style="margin-bottom:6px;"><label>Coachings</label>
       <label style="display:inline-flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text);margin-right:16px;">
@@ -884,7 +890,7 @@ function renderResumo(data) {
 // ── CADASTRO DE LÍDERES ──
 function abrirModalLider() {
   document.getElementById('lider-matricula').value = '';
-  document.getElementById('lider-nome').value = '';
+  document.getElementById('lider-nome').value = ''; if (document.getElementById('lider-email')) document.getElementById('lider-email').value = '';
   document.getElementById('lider-gerencia').value = document.getElementById('filtro-gerencia').value || '';
   document.getElementById('lider-semestre').value = document.getElementById('filtro-semestre').value || 'S1';
   document.getElementById('lider-insp').checked = true;
@@ -907,6 +913,9 @@ async function salvarLider() {
     alert('Preencha matrícula, nome, gerência e marque ao menos um coaching.');
     return;
   }
+  const emailNovo = (document.getElementById('lider-email')?.value || '').trim();
+  if (emailNovo && !emailValido(emailNovo)) { alert('E-mail inválido.'); return; }
+  if (emailNovo) await salvarEmail(matricula, nome, emailNovo);
 
   const btn = document.getElementById('btn-salvar-lider');
   btn.disabled = true;
@@ -1052,6 +1061,18 @@ async function carregarTecnicos() {
   (re.data || []).forEach(e => { emailsPorMatricula[String(e.matricula)] = e.email; emailsPorNome[normTxt(e.nome)] = e.email; });
 }
 let emailsPorMatricula = {}, emailsPorNome = {};
+const emailValido = e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
+// Grava/atualiza um e-mail (chave = matrícula; sem matrícula, usa o nome)
+async function salvarEmail(matricula, nome, email) {
+  email = String(email || '').trim().toLowerCase();
+  if (!email) return true;
+  if (!emailValido(email)) { alert('E-mail inválido: ' + email); return false; }
+  const chave = String(matricula || '').replace(/\D/g, '') || ('NOME:' + normTxt(nome));
+  const { error } = await sb.from('emails_colaboradores').upsert({ matricula: chave, nome: normTxt(nome), email, atualizado_em: new Date().toISOString() }, { onConflict: 'matricula' });
+  if (error) { alert('Não consegui salvar o e-mail: ' + error.message); return false; }
+  emailsPorMatricula[chave] = email; emailsPorNome[normTxt(nome)] = email;
+  return true;
+}
 const emailLider = c => emailsPorMatricula[String(c.matricula || '')] || emailsPorNome[normTxt(c.lider_nome)] || '';
 function emailTecnico(c) {
   const t = tecnicos.find(x => x.id === c.tecnico_id) || tecnicos.find(x => normTxt(x.nome) === normTxt(c.tecnico_nome));
@@ -1082,7 +1103,7 @@ function renderTecnicos() {
     <div style="font-weight:700;color:#07583C;margin:14px 0 6px">${nomeUnidade(uid)}</div>
     <table style="width:100%;border-collapse:collapse;font-size:13px">
       ${porUn[uid].map(t => `<tr style="${t.ativo ? '' : 'opacity:.5'}">
-        <td style="padding:6px 8px;border-bottom:1px solid var(--border)"><b>${t.nome}</b>${t.matricula ? ' <span style="color:var(--muted);font-size:11px">Mat: ' + t.matricula + '</span>' : ''}${t.ativo ? '' : ' <span style="font-size:11px">(inativo)</span>'}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--border)"><b>${t.nome}</b>${t.matricula ? ' <span style="color:var(--muted);font-size:11px">Mat: ' + t.matricula + '</span>' : ''}<br><span style="font-size:11px;color:var(--muted)">${(t.matricula && emailsPorMatricula[String(t.matricula)]) || emailsPorNome[normTxt(t.nome)] || 'sem e-mail'}</span>${t.ativo ? '' : ' <span style="font-size:11px">(inativo)</span>'}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap">
           <button class="btn btn-secondary btn-sm" onclick="editarTecnico(${t.id})">✏️ Editar</button>
           <button class="btn btn-secondary btn-sm" onclick="alternarTecnico(${t.id})">${t.ativo ? '🚫 Desativar' : '↩️ Reativar'}</button>
@@ -1094,6 +1115,7 @@ function limparFormTecnico() {
   tecEditando = null;
   document.getElementById('tec-nome').value = '';
   document.getElementById('tec-matricula').value = '';
+  document.getElementById('tec-email').value = '';
   document.getElementById('tec-erro').textContent = '';
   document.getElementById('tec-salvar').textContent = 'Adicionar técnico';
   document.getElementById('tec-cancelar').style.display = 'none';
@@ -1104,6 +1126,7 @@ function editarTecnico(id) {
   document.getElementById('tec-nome').value = t.nome;
   document.getElementById('tec-matricula').value = t.matricula || '';
   document.getElementById('tec-unidade').value = t.unidade_id;
+  document.getElementById('tec-email').value = (t.matricula && emailsPorMatricula[String(t.matricula)]) || emailsPorNome[normTxt(t.nome)] || '';
   document.getElementById('tec-salvar').textContent = 'Salvar alteração';
   document.getElementById('tec-cancelar').style.display = '';
   document.getElementById('tec-nome').focus();
@@ -1118,11 +1141,14 @@ async function salvarTecnico() {
   if (!unidade_id) { erro.textContent = 'Escolha a unidade.'; return; }
   const dup = tecnicos.find(t => t.id !== tecEditando && normTxt(t.nome) === normTxt(nome) && t.unidade_id === unidade_id);
   if (dup) { erro.textContent = 'Esse técnico já está cadastrado nessa unidade.'; return; }
+  const emailTec = document.getElementById('tec-email').value.trim();
+  if (emailTec && !emailValido(emailTec)) { erro.textContent = 'E-mail inválido.'; return; }
   const dados = { nome, matricula, unidade_id, ...auditoria() };
   const { error } = tecEditando
     ? await sb.from('tecnicos_ssma').update(dados).eq('id', tecEditando)
     : await sb.from('tecnicos_ssma').insert({ ...dados, ativo: true });
   if (error) { erro.textContent = 'Não salvou: ' + error.message; return; }
+  if (emailTec) await salvarEmail(matricula, nome, emailTec);
   limparFormTecnico();
   await carregarTecnicos(); renderTecnicos();
 }
@@ -1211,6 +1237,7 @@ function abrirModalAgendar(id) {
   const c = linhasCrono[id] || {};
   document.getElementById('agendar-id').value = id;
   document.getElementById('agendar-data').value = c.data_agendada || '';
+  document.getElementById('agendar-email-lider').value = emailLider(c);
   const lista = tecnicosDaGerencia(c);
   const atual = c.tecnico_nome || '';
   const atualNaLista = lista.some(t => normTxt(t.nome) === normTxt(atual));
@@ -1232,6 +1259,10 @@ async function salvarAgendamento() {
   const c0 = linhasCrono[id] || {};
   const tObj = tecnicos.find(t => String(t.id) === selTec);
   const tec = selTec === 'atual' ? (c0.tecnico_nome || '') : (tObj ? tObj.nome : '');
+  const emailLid = document.getElementById('agendar-email-lider').value.trim();
+  if (emailLid && emailLid.toLowerCase() !== emailLider(c0).toLowerCase()) {
+    if (!(await salvarEmail(c0.matricula, c0.lider_nome, emailLid))) return;
+  }
 
   const { error } = await sb.from('cronograma_coaching').update({
     data_agendada: dt || null,

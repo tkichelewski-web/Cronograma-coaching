@@ -6,6 +6,7 @@
 <title>Cronograma Coaching — VIDAS</title>
 <!-- Supabase -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <!-- PDF.js para leitura dos PDFs do WeCheck -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
 <!-- Chart.js para o Painel -->
@@ -193,6 +194,7 @@ input[type=text], input[type=search]{text-transform:uppercase;}
     <div class="table-wrap">
       <div class="table-header">
         <span class="table-title">📋 Acompanhamentos Planejados</span>
+        <button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="exportarAcompanhamentos()">📥 Exportar planilha</button>
       </div>
       <div id="crono-lista">
         <div class="loading">Selecione os filtros acima para carregar o cronograma.</div>
@@ -216,6 +218,20 @@ input[type=text], input[type=search]{text-transform:uppercase;}
         <div id="tec-erro" style="color:#DF4636;font-size:13px;margin-top:8px"></div>
       </div>
       <div id="tec-lista" style="padding:0 18px 18px"></div>
+    </div>
+    <div class="table-wrap" style="margin-top:16px">
+      <div class="table-header"><span class="table-title">📇 E-mails e conferência com o ATIVOS</span></div>
+      <div style="padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+        <p style="margin:0;font-size:13px;color:var(--muted)">Envie a planilha ATIVOS (colunas MATRICULA e NOME). Com ela você pode atualizar os e-mails de líderes e técnicos e encontrar líderes que saíram da empresa.</p>
+        <div><label>Planilha ATIVOS</label><input type="file" id="adm-ativos" accept=".xlsx,.xls,.csv"></div>
+        <div><label>Lista de e-mails copiada do Outlook (opcional) — formato NOME &lt;email&gt;; NOME &lt;email&gt;</label>
+          <textarea id="adm-emails" rows="4" style="width:100%" placeholder="FULANO DA SILVA &lt;FSilva@usinasantaadelia.com.br&gt;; ..."></textarea></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="atualizarEmails()">📇 Atualizar e-mails</button>
+          <button class="btn btn-secondary" onclick="conferirLideresAtivos()">🔎 Conferir líderes com o ATIVOS</button>
+        </div>
+        <div id="adm-resultado" style="font-size:13px"></div>
+      </div>
     </div>
   </div>
 
@@ -266,6 +282,10 @@ input[type=text], input[type=search]{text-transform:uppercase;}
     <div style="margin-bottom:14px;">
       <label>Data Planejada</label>
       <input type="date" id="agendar-data" style="width:100%">
+    </div>
+    <div style="margin-bottom:14px;display:flex;gap:10px">
+      <div style="flex:1"><label>Horário (para a agenda)</label><input type="time" id="agendar-hora" style="width:100%"></div>
+      <div style="flex:1"><label>Duração</label><select id="agendar-duracao" style="width:100%"><option value="30">30 min</option><option value="60" selected>1 hora</option><option value="90">1h30</option><option value="120">2 horas</option></select></div>
     </div>
     <div style="margin-bottom:14px;">
       <label>Técnico Responsável</label>
@@ -385,6 +405,7 @@ let unidadesLista = []; // tabela unidades
 const normTxt = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
 const ehAdminTecnicos = () => ADMIN_EMAILS.includes(usuarioEmail);
 let linhasCrono = {}; // registros carregados, por id
+let dadosVisiveis = []; // o que está na tabela agora (filtros + busca)
 let safras = [];
 let gerencias = [];
 let diretorias = [];
@@ -605,6 +626,7 @@ function desenharTudo() {
   const termo = normalizarTexto(document.getElementById('filtro-busca')?.value || '').trim();
   let d = dadosBase;
   if (termo) d = d.filter(c => normalizarTexto(c.lider_nome).includes(termo) || String(c.matricula).includes(termo));
+  dadosVisiveis = d;
   renderResumo(d);
   desenharTabela(d);
   if (abaAtual === 'painel') renderPainel(d);
@@ -650,6 +672,7 @@ function desenharTabela(data) {
       acoesHtml = `<button class="btn btn-secondary btn-sm" onclick="reativarLider(${c.id})">↩️ Reativar</button>`;
     } else if (c.status !== 'Realizado') {
       acoesHtml += `<button class="btn btn-secondary btn-sm" onclick="abrirModalAgendar(${c.id})">📅 Agendar</button>`;
+      if (c.data_agendada) acoesHtml += `<button class="btn btn-secondary btn-sm" title="Colocar na agenda do Outlook" onclick="abrirAgendaOutlook(linhasCrono[${c.id}], '', 60)">🗓️ Outlook</button>`;
       acoesHtml += okTec ? btnVerTec : `<button class="btn btn-primary btn-sm" onclick="abrirModalValidar(${c.id}, 'tecnico')">📎 Checklist Técnico</button>`;
       acoesHtml += okLid ? btnVerLid : `<button class="btn btn-primary btn-sm" onclick="abrirModalValidar(${c.id}, 'lider')">📎 Checklist Líder</button>`;
       if (podeDarBaixaManual) {
@@ -1016,13 +1039,23 @@ async function diagnosticarVazio(safraId, mes, gerId) {
 
 // ── TÉCNICOS DE SEGURANÇA (cadastro e filtro por unidade) ──
 async function carregarTecnicos() {
-  const [rt, ru] = await Promise.all([
+  const [rt, ru, re] = await Promise.all([
     sb.from('tecnicos_ssma').select('*').order('nome'),
-    sb.from('unidades').select('id,nome').order('nome')
+    sb.from('unidades').select('id,nome').order('nome'),
+    sb.from('emails_colaboradores').select('matricula,nome,email')
   ]);
   if (rt.error) console.warn('Tabela tecnicos_ssma indisponível:', rt.error.message);
+  if (re.error) console.warn('Tabela emails_colaboradores indisponível:', re.error.message);
   tecnicos = rt.data || [];
   unidadesLista = ru.data || [];
+  emailsPorMatricula = {}; emailsPorNome = {};
+  (re.data || []).forEach(e => { emailsPorMatricula[String(e.matricula)] = e.email; emailsPorNome[normTxt(e.nome)] = e.email; });
+}
+let emailsPorMatricula = {}, emailsPorNome = {};
+const emailLider = c => emailsPorMatricula[String(c.matricula || '')] || emailsPorNome[normTxt(c.lider_nome)] || '';
+function emailTecnico(c) {
+  const t = tecnicos.find(x => x.id === c.tecnico_id) || tecnicos.find(x => normTxt(x.nome) === normTxt(c.tecnico_nome));
+  return (t && t.matricula && emailsPorMatricula[String(t.matricula)]) || emailsPorNome[normTxt(c.tecnico_nome)] || '';
 }
 const nomeUnidade = id => (unidadesLista.find(u => u.id === id) || {}).nome || '-';
 
@@ -1101,6 +1134,78 @@ async function alternarTecnico(id) {
   await carregarTecnicos(); renderTecnicos();
 }
 
+// ── E-MAILS E CONFERÊNCIA COM O ATIVOS (administrador) ──
+async function lerAtivos() {
+  const f = document.getElementById('adm-ativos').files[0];
+  if (!f) { alert('Escolha a planilha ATIVOS.'); return null; }
+  if (typeof XLSX === 'undefined') { alert('A biblioteca de Excel não carregou. Recarregue a página (Ctrl + F5).'); return null; }
+  const wb = XLSX.read(new Uint8Array(await f.arrayBuffer()), { type: 'array' });
+  const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null });
+  const col = (l, n) => { const k = Object.keys(l).find(x => normTxt(x) === n); return k ? l[k] : null; };
+  const porMat = {}, porNome = {};
+  linhas.forEach(l => {
+    const m = String(col(l, 'MATRICULA') ?? '').replace(/\D/g, ''); const n = normTxt(col(l, 'NOME'));
+    if (!m) return; porMat[m] = n; (porNome[n] = porNome[n] || []).push(m);
+  });
+  if (!Object.keys(porMat).length) { alert('Não encontrei as colunas MATRICULA e NOME na planilha.'); return null; }
+  return { porMat, porNome };
+}
+async function atualizarEmails() {
+  if (!ehAdminTecnicos()) return;
+  const at = await lerAtivos(); if (!at) return;
+  const texto = document.getElementById('adm-emails').value;
+  const pares = texto.split(';').map(x => x.match(/^\s*(.*?)\s*<([^>]+)>\s*$/)).filter(Boolean).map(m => ({ nome: normTxt(m[1]), email: m[2].trim().toLowerCase() }));
+  if (!pares.length) { alert('Cole a lista de e-mails no formato NOME <email>; NOME <email>.'); return; }
+  const linhas = [], semAtivos = [], repetidos = [];
+  pares.forEach(p => {
+    const ms = at.porNome[p.nome] || [];
+    if (ms.length === 1) linhas.push({ matricula: ms[0], nome: p.nome, email: p.email, atualizado_em: new Date().toISOString() });
+    else if (ms.length > 1) repetidos.push(p.nome); else semAtivos.push(p.nome);
+  });
+  const { error } = await sb.from('emails_colaboradores').upsert(linhas, { onConflict: 'matricula' });
+  if (error) { alert('Não salvou: ' + error.message + (String(error.message).includes('emails_colaboradores') ? '\n\nRode antes o SQL emails_colaboradores.sql.' : '')); return; }
+  await carregarTecnicos();
+  document.getElementById('adm-resultado').innerHTML = `✅ <b>${linhas.length}</b> e-mail(s) gravado(s).` +
+    (semAtivos.length ? `<br>⚠️ Não encontrados no ATIVOS (${semAtivos.length}): ${semAtivos.join(', ')}` : '') +
+    (repetidos.length ? `<br>⚠️ Nome repetido no ATIVOS, não gravado (${repetidos.length}): ${repetidos.join(', ')}` : '');
+}
+async function conferirLideresAtivos() {
+  if (!ehAdminTecnicos()) return;
+  const at = await lerAtivos(); if (!at) return;
+  const safraId = document.getElementById('filtro-safra').value;
+  const { data, error } = await sb.from('cronograma_coaching').select('id,safra_id,semestre,matricula,lider_nome,status,gerencias(nome)').eq('safra_id', safraId).neq('status', 'Inativo').neq('status', 'Realizado');
+  if (error) { alert('Erro: ' + error.message); return; }
+  const fora = {};
+  (data || []).forEach(c => {
+    const m = String(c.matricula || '').replace(/\D/g, '');
+    if (m && at.porMat[m]) return;
+    const k = (c.semestre || 'S1') + '|' + m + '|' + c.lider_nome;
+    (fora[k] = fora[k] || { ...c, qtd: 0 }).qtd++;
+  });
+  const lista = Object.values(fora).sort((a, b) => String(a.lider_nome).localeCompare(String(b.lider_nome)));
+  const el = document.getElementById('adm-resultado');
+  if (!lista.length) { el.innerHTML = '✅ Todos os líderes com coaching pendente nesta safra estão no ATIVOS.'; return; }
+  el.innerHTML = `<p style="margin:0 0 8px"><b>${lista.length}</b> líder(es) com coaching pendente <b>não estão no ATIVOS</b>. Marque quem deve sair do acompanhamento:</p>
+    <div style="max-height:320px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px 12px">
+    ${lista.map((c, i) => `<label style="display:flex;gap:8px;padding:4px 0;font-size:13px"><input type="checkbox" class="adm-fora" data-i="${i}" checked>
+      <span><b>${c.lider_nome}</b> (${c.matricula || 'sem matrícula'}) · ${c.gerencias?.nome || ''} · ${c.semestre || 'S1'} · ${c.qtd} coaching(s) pendente(s)</span></label>`).join('')}
+    </div>
+    <button class="btn btn-danger" style="margin-top:10px" id="adm-remover">🚫 Remover marcados do acompanhamento</button>`;
+  document.getElementById('adm-remover').onclick = async () => {
+    const marcados = [...document.querySelectorAll('.adm-fora:checked')].map(x => lista[Number(x.dataset.i)]);
+    if (!marcados.length) return;
+    if (!confirm(`Remover ${marcados.length} líder(es) do acompanhamento?\n\nOs coachings pendentes deixam de contar no previsto. Os realizados são mantidos.`)) return;
+    let ok = 0;
+    for (const c of marcados) {
+      const { error: e } = await sb.from('cronograma_coaching').update({ status: 'Inativo', ...auditoria() })
+        .eq('safra_id', c.safra_id).eq('semestre', c.semestre || 'S1').eq('matricula', c.matricula).neq('status', 'Realizado');
+      if (!e) ok++; else console.error(c.lider_nome, e);
+    }
+    el.innerHTML = `✅ ${ok} líder(es) removido(s) do acompanhamento. Para desfazer, marque "Mostrar inativos" e use Reativar.`;
+    renderCronograma();
+  };
+}
+
 // ── AÇÕES DE AGENDAMENTO E BAIXA MANUAL ──
 function abrirModalAgendar(id) {
   const c = linhasCrono[id] || {};
@@ -1140,8 +1245,98 @@ async function salvarAgendamento() {
     alert("Erro ao agendar: " + error.message);
   } else {
     fecharModal('modal-agendar');
-    renderCronograma();
+    await renderCronograma();
+    if (dt) {
+      const c = { ...c0, data_agendada: dt, tecnico_nome: tec || c0.tecnico_nome };
+      abrirAgendaOutlook(c, document.getElementById('agendar-hora').value, Number(document.getElementById('agendar-duracao').value) || 60);
+    }
   }
+}
+
+// ── AGENDA NO OUTLOOK (sem integração com a TI: Outlook na web ou convite .ics) ──
+function dadosEvento(c, hora, duracaoMin) {
+  const tipo = c.tipo || 'Coaching';
+  const ger = c.gerencias?.nome || '';
+  const un = c.gerencias?.unidades?.nome || '';
+  const titulo = `Coaching de ${tipo} — ${c.lider_nome || ''}`;
+  const descricao = [
+    `Coaching de liderança — ${tipo}`,
+    `Líder: ${c.lider_nome || '-'} (matrícula ${c.matricula || '-'})`,
+    `Gerência: ${ger}${un ? ' (' + un + ')' : ''}`,
+    `Técnico de Segurança: ${c.tecnico_nome || '-'}`,
+    '',
+    'Depois do coaching, envie os checklists do técnico e do líder no Cronograma de Coaching.'
+  ].join('\n');
+  const local = [ger, un].filter(Boolean).join(' · ');
+  let ini, fim, diaInteiro = !hora;
+  if (diaInteiro) { ini = c.data_agendada; const d = new Date(c.data_agendada + 'T12:00:00'); d.setDate(d.getDate() + 1); fim = d.toISOString().slice(0, 10); }
+  else {
+    ini = `${c.data_agendada}T${hora}:00`;
+    const d = new Date(`${c.data_agendada}T${hora}:00`); d.setMinutes(d.getMinutes() + duracaoMin);
+    const p2 = n => String(n).padStart(2, '0');
+    fim = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}:00`;
+  }
+  const participantes = [
+    { nome: c.lider_nome, email: emailLider(c), papel: 'Líder' },
+    { nome: c.tecnico_nome, email: emailTecnico(c), papel: 'Técnico' }
+  ].filter(x => x.nome);
+  return { titulo, descricao, local, ini, fim, diaInteiro, participantes };
+}
+function linkOutlookWeb(ev) {
+  const q = new URLSearchParams({ path: '/calendar/action/compose', rru: 'addevent', subject: ev.titulo, body: ev.descricao, location: ev.local, startdt: ev.ini, enddt: ev.fim, allday: ev.diaInteiro ? 'true' : 'false' });
+  const para = (ev.participantes || []).map(x => x.email).filter(Boolean);
+  if (para.length) q.set('to', para.join(','));
+  return 'https://outlook.office.com/calendar/0/deeplink/compose?' + q.toString();
+}
+function baixarIcs(ev) {
+  const esc = t => String(t).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+  const fmt = (v, dia) => dia ? v.replace(/-/g, '') : v.replace(/[-:]/g, '');
+  const linhas = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Usina Santa Adelia//Cronograma de Coaching//PT', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
+    'UID:coaching-' + Date.now() + '@usinasantaadelia', 'DTSTAMP:' + new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z',
+    (ev.diaInteiro ? 'DTSTART;VALUE=DATE:' : 'DTSTART:') + fmt(ev.ini, ev.diaInteiro),
+    (ev.diaInteiro ? 'DTEND;VALUE=DATE:' : 'DTEND:') + fmt(ev.fim, ev.diaInteiro),
+    'SUMMARY:' + esc(ev.titulo), 'DESCRIPTION:' + esc(ev.descricao), 'LOCATION:' + esc(ev.local),
+    ...(ev.participantes || []).filter(x => x.email).map(x => 'ATTENDEE;CN="' + String(x.nome).replace(/"/g, '') + '";ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:' + x.email),
+    'BEGIN:VALARM', 'TRIGGER:-PT1H', 'ACTION:DISPLAY', 'DESCRIPTION:Lembrete do coaching', 'END:VALARM',
+    'END:VEVENT', 'END:VCALENDAR'];
+  const blob = new Blob([linhas.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = ('Coaching_' + (ev.titulo.split('—')[1] || '').trim().replace(/\W+/g, '_') + '.ics').replace('__', '_');
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function abrirAgendaOutlook(c, hora, duracaoMin) {
+  const ev = dadosEvento(c, hora, duracaoMin || 60);
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay show'; ov.id = 'modal-outlook';
+  ov.innerHTML = `<div class="modal">
+    <div class="modal-title">📅 Colocar na agenda do Outlook</div>
+    <p style="font-size:13px;color:var(--muted);line-height:1.5;margin:0 0 14px">${ev.titulo}<br>${c.data_agendada.split('-').reverse().join('/')}${hora ? ' às ' + hora : ' (dia inteiro)'}<br>
+    ${(ev.participantes || []).map(x => `${x.papel}: <b>${x.nome}</b> ${x.email ? '&lt;' + x.email + '&gt;' : '<span style="color:#c47d0e">(sem e-mail cadastrado: inclua no Outlook)</span>'}`).join('<br>')}<br>
+    Confira os participantes no Outlook e clique em Enviar.</p>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <a class="btn btn-primary" href="${linkOutlookWeb(ev)}" target="_blank" rel="noopener" style="justify-content:center">Abrir no Outlook (navegador)</a>
+      <button class="btn btn-secondary" id="btn-ics" style="justify-content:center">Baixar convite (.ics) para o Outlook do computador</button>
+    </div>
+    <div class="modal-footer"><button class="btn btn-secondary" onclick="document.getElementById('modal-outlook').remove()">Fechar</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#btn-ics').onclick = () => baixarIcs(ev);
+}
+
+// ── EXPORTAR ACOMPANHAMENTOS (o que está na tabela, com filtros e busca) ──
+function exportarAcompanhamentos() {
+  if (typeof XLSX === 'undefined') { alert('A biblioteca de Excel não carregou. Recarregue a página (Ctrl + F5).'); return; }
+  const lista = dadosVisiveis || [];
+  if (!lista.length) { alert('Não há acompanhamentos na tabela para exportar. Ajuste os filtros.'); return; }
+  const f = d => d ? String(d).slice(0, 10).split('-').reverse().join('/') : '';
+  const cab = ['Gerência', 'Unidade', 'Líder', 'Matrícula', 'Tipo', 'Semestre', 'Mês', 'Situação', 'Data agendada', 'Técnico responsável', 'Data do coaching', 'Data checklist do líder', 'Checklist técnico', 'Checklist líder', 'Baixa por'];
+  const linhas = lista.map(c => [c.gerencias?.nome || '', c.gerencias?.unidades?.nome || '', c.lider_nome || '', c.matricula || '', c.tipo || '', c.semestre || '', String(c.mes || '').slice(0, 7),
+    situacao(c).txt, f(c.data_agendada), c.tecnico_nome || '', f(c.data_coaching), f(c.data_lider), c.evidencia_url ? 'Sim' : 'Não', c.evidencia_lider_url ? 'Sim' : 'Não', c.baixa_por || '']);
+  const ws = XLSX.utils.aoa_to_sheet([cab, ...linhas]);
+  ws['!cols'] = [{ wch: 40 }, { wch: 8 }, { wch: 34 }, { wch: 11 }, { wch: 11 }, { wch: 9 }, { wch: 8 }, { wch: 18 }, { wch: 13 }, { wch: 30 }, { wch: 13 }, { wch: 13 }, { wch: 10 }, { wch: 10 }, { wch: 24 }];
+  ws['!autofilter'] = { ref: 'A1:O' + (linhas.length + 1) };
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Acompanhamentos');
+  XLSX.writeFile(wb, 'Coaching_acompanhamentos_' + new Date().toISOString().slice(0, 10) + '.xlsx');
 }
 
 async function darBaixaManual(id) {

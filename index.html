@@ -341,7 +341,37 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 const SB_URL = 'https://umpctnchhmyvpjwxllaj.supabase.co';
 const SB_KEY = 'sb_publishable_lxiF04jATB1HMLINX-FvOg_3JOjXxrQ';
 const SB_OPTS = { auth: { persistSession:true, storageKey:'sistema-ip-auth', autoRefreshToken:true } };
-const sb = supabase.createClient(SB_URL, SB_KEY, SB_OPTS);
+let sb = supabase.createClient(SB_URL, SB_KEY, SB_OPTS);
+
+// A página costuma ficar aberta muito tempo. Quando a conexão com o Supabase "envelhece"
+// (token vencido, rede que caiu e voltou), a gravação falha com "Failed to fetch".
+// Antes de gravar, renova a sessão; se a chamada falhar por rede, recria o cliente e tenta de novo.
+async function renovarConexao() {
+  try {
+    const { data } = await sb.auth.getSession();
+    const exp = data?.session?.expires_at ? data.session.expires_at * 1000 : 0;
+    if (data?.session && exp - Date.now() < 5 * 60 * 1000) await sb.auth.refreshSession();
+  } catch (e) { console.warn('Não consegui renovar a sessão:', e); }
+}
+function erroDeRede(e) {
+  const m = String((e && (e.message || e.error_description)) || e || '');
+  return /failed to fetch|networkerror|load failed|network request failed|fetch failed/i.test(m);
+}
+async function comRetentativa(rotulo, fn, tentativas = 3) {
+  for (let i = 1; i <= tentativas; i++) {
+    try {
+      const r = await fn();
+      if (r && r.error && erroDeRede(r.error) && i < tentativas) throw r.error;
+      return r;
+    } catch (e) {
+      if (!erroDeRede(e) || i === tentativas) throw e;
+      console.warn(rotulo + ': falha de rede, tentando de novo (' + i + ')', e);
+      await new Promise(res => setTimeout(res, 800 * i));
+      sb = supabase.createClient(SB_URL, SB_KEY, SB_OPTS);
+      await renovarConexao();
+    }
+  }
+}
 
 const PORTAL_URL = 'https://tkichelewski-web.github.io/portal-ip/';
 let usuario = null;
@@ -1324,12 +1354,13 @@ async function processarPDFWeCheck() {
     }
 
     statusEl.innerHTML = '<span style="color:#07583C">✅ PDF conferido! Enviando arquivo...</span>';
+    await renovarConexao();
 
     // Upload do PDF
     const mesPasta = (info.dataFinalizado || '').substring(0, 7) || c.mes || 'sem-mes';
     const nomeArquivoLimpo = file.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9.\-_]/g, '_');
     const path = `coaching/${mesPasta}/${idCrono}_${etapa}_${Date.now()}_${nomeArquivoLimpo}`;
-    const { error: upError } = await sb.storage.from('evidencias').upload(path, file);
+    const { error: upError } = await comRetentativa('Envio do PDF', () => sb.storage.from('evidencias').upload(path, file));
     if (upError) throw upError;
     const { data: pubUrl } = sb.storage.from('evidencias').getPublicUrl(path);
 
@@ -1357,7 +1388,7 @@ async function processarPDFWeCheck() {
     if (concluiu) { update.baixa_por = nomeOperador() || null; update.baixa_por_email = usuarioEmail || null; update.baixa_em = agoraISO(); }
     Object.assign(update, auditoria());
 
-    const { error: dbError } = await sb.from('cronograma_coaching').update(update).eq('id', idCrono);
+    const { error: dbError } = await comRetentativa('Gravação do coaching', () => sb.from('cronograma_coaching').update(update).eq('id', idCrono));
     if (dbError) throw dbError;
 
     alert(concluiu
@@ -1368,7 +1399,9 @@ async function processarPDFWeCheck() {
 
   } catch (err) {
     console.error(err);
-    falhar('Erro no processamento: ' + err.message);
+    falhar(erroDeRede(err)
+      ? 'A conexão com o servidor caiu e não voltou depois de 3 tentativas. Confira a internet e clique em "Tentar Novamente" (não precisa recarregar a página).'
+      : 'Erro no processamento: ' + err.message);
   }
 }
 

@@ -1291,13 +1291,14 @@ function dadosEvento(c, hora, duracaoMin) {
   const un = c.gerencias?.unidades?.nome || '';
   const titulo = `Coaching de ${tipo} — ${c.lider_nome || ''}`;
   const descricao = [
-    `Coaching de liderança — ${tipo}`,
-    `Líder: ${c.lider_nome || '-'} (matrícula ${c.matricula || '-'})`,
-    `Gerência: ${ger}${un ? ' (' + un + ')' : ''}`,
-    `Técnico de Segurança: ${c.tecnico_nome || '-'}`,
+    `Coaching de Liderança — ${tipo}`,
     '',
-    'Depois do coaching, envie os checklists do técnico e do líder no Cronograma de Coaching.'
-  ].join('\n');
+    `Líder: ${c.lider_nome || '-'}`,
+    `Matrícula: ${c.matricula || '-'}`,
+    `Gerência: ${ger || '-'}`,
+    `Unidade: ${un || '-'}`,
+    `Técnico de Segurança: ${c.tecnico_nome || '-'}`
+  ].join('\r\n');
   const local = [ger, un].filter(Boolean).join(' · ');
   let ini, fim, diaInteiro = !hora;
   if (diaInteiro) { ini = c.data_agendada; const d = new Date(c.data_agendada + 'T12:00:00'); d.setDate(d.getDate() + 1); fim = d.toISOString().slice(0, 10); }
@@ -1320,7 +1321,7 @@ function linkOutlookWeb(ev) {
   return 'https://outlook.office.com/calendar/0/deeplink/compose?' + q.toString();
 }
 function baixarIcs(ev) {
-  const esc = t => String(t).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+  const esc = t => String(t).replace(/\r/g, '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
   const fmt = (v, dia) => dia ? v.replace(/-/g, '') : v.replace(/[-:]/g, '');
   const linhas = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Usina Santa Adelia//Cronograma de Coaching//PT', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
     'UID:coaching-' + Date.now() + '@usinasantaadelia', 'DTSTAMP:' + new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z',
